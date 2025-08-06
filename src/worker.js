@@ -1,9 +1,9 @@
 /**
  * Cloudflare Worker entry point for MCP Knowledge Base Server
- * This wraps the Express app for deployment on Cloudflare Workers
+ * This wraps the MCP server for deployment on Cloudflare Workers
  */
 
-import app from './mcp-server.js';
+import { handleMcpRequest } from './mcp-handler.js';
 
 // Cloudflare Worker fetch handler
 export default {
@@ -13,49 +13,8 @@ export default {
     if (env.SUPABASE_SERVICE_KEY) process.env.SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
     if (env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = env.OPENAI_API_KEY;
     
-    // Convert Cloudflare Worker request to Node.js-compatible format
     const url = new URL(request.url);
     
-    // Create a mock Node.js request object
-    const req = {
-      method: request.method,
-      url: url.pathname + url.search,
-      headers: Object.fromEntries(request.headers.entries()),
-      body: request.body ? await request.json() : undefined
-    };
-    
-    // Create a mock Node.js response object
-    let responseStatus = 200;
-    let responseHeaders = {};
-    let responseBody = '';
-    
-    const res = {
-      status: (code) => {
-        responseStatus = code;
-        return res;
-      },
-      setHeader: (name, value) => {
-        responseHeaders[name] = value;
-        return res;
-      },
-      header: (name, value) => {
-        responseHeaders[name] = value;
-        return res;
-      },
-      json: (data) => {
-        responseHeaders['Content-Type'] = 'application/json';
-        responseBody = JSON.stringify(data);
-      },
-      send: (data) => {
-        responseBody = data;
-      },
-      sendStatus: (code) => {
-        responseStatus = code;
-        responseBody = '';
-      }
-    };
-    
-    // Route the request through Express app
     try {
       // Handle CORS preflight
       if (request.method === 'OPTIONS') {
@@ -87,8 +46,7 @@ export default {
           }
         });
       } else if (url.pathname === '/mcp') {
-        // Import the handler directly to avoid Express routing issues
-        const { handleMcpRequest } = await import('./mcp-handler.js');
+        // Handle MCP requests
         return await handleMcpRequest(request, env);
       }
       

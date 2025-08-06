@@ -71,21 +71,60 @@ export class KnowledgeBaseMCP extends McpAgent {
       'upload_image',
       'Upload an image file and generate AI description for search',
       {
-        file_base64: z.string().describe('Base64-encoded image data'),
+        file_path: z.string().optional().describe('Path to the image file (for compatibility, will fail in Workers)'),
+        file_base64: z.string().optional().describe('Base64-encoded image data (required for Cloudflare Workers)'),
         original_filename: z.string().describe('Original filename with extension')
       },
-      async ({ file_base64, original_filename }) => {
+      async ({ file_path, file_base64, original_filename }) => {
         try {
-          console.log('[mcp-agent] upload_image called with filename:', original_filename);
+          console.log('[mcp-agent] upload_image called with:', {
+            has_file_path: !!file_path,
+            has_file_base64: !!file_base64,
+            original_filename
+          });
+          
           const credentials = getCredentials();
           
-          // Convert base64 to Uint8Array for Cloudflare Workers
-          const binaryString = atob(file_base64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+          // Check if we're in Cloudflare Workers (no file system access)
+          if (file_path && !file_base64) {
+            // This won't work in Cloudflare Workers
+            console.error('[mcp-agent] file_path provided but no file_base64 - this will fail in Cloudflare Workers');
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  success: false,
+                  error: 'File paths are not supported in Cloudflare Workers. Please provide base64-encoded image data instead.',
+                  hint: 'The middle layer should read the file and convert it to base64 before sending to the MCP server.'
+                }, null, 2)
+              }],
+              isError: true
+            };
           }
-          console.log('[mcp-agent] Converted base64 to Uint8Array, size:', bytes.length);
+          
+          if (!file_base64) {
+            throw new Error('file_base64 is required for image upload in Cloudflare Workers');
+          }
+          
+          // Convert base64 to Uint8Array for Cloudflare Workers
+          console.log('[mcp-agent] Converting base64 to Uint8Array...');
+          let bytes;
+          try {
+            // Remove data URL prefix if present
+            const base64Data = file_base64.includes(',') 
+              ? file_base64.split(',')[1] 
+              : file_base64;
+            
+            const binaryString = atob(base64Data);
+            bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            console.log('[mcp-agent] Converted base64 to Uint8Array, size:', bytes.length);
+          } catch (base64Error) {
+            console.error('[mcp-agent] Base64 conversion error:', base64Error);
+            throw new Error(`Invalid base64 data: ${base64Error.message}`);
+          }
           
           const result = await uploadImage({ 
             file_data: bytes, 

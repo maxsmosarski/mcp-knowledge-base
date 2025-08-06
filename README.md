@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that enables semantic search and document management using your own Supabase and OpenAI accounts.
 
+**Live Demo**: `https://mcp-supabase.max-smosarski.workers.dev`
+
 ## Features
 
 - 📄 Upload and process documents (text, PDF, images)
@@ -9,6 +11,26 @@ A Model Context Protocol (MCP) server that enables semantic search and document 
 - 🖼️ AI-powered image description and search
 - 🔐 Use your own API keys - no shared credentials
 - ☁️ Deploy to Cloudflare Workers or run locally
+- 🌍 Edge computing with Durable Objects
+- 👥 Multi-tenant support via request headers
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/maxsmosarski/mcp-knowledge-base.git
+cd mcp-server
+
+# Install dependencies
+npm install
+
+# Option 1: Run locally
+npm start
+
+# Option 2: Deploy to Cloudflare Workers
+wrangler login
+wrangler deploy
+```
 
 ## Three Implementations
 
@@ -27,16 +49,19 @@ This repository contains three implementations of the MCP server:
 - Ideal for local tool usage
 
 ### 3. Cloudflare Workers (`src/mcp-agent.js`)
-- Uses Cloudflare's `agents` SDK with native Worker support
-- Designed specifically for Cloudflare Workers deployment
-- No mock objects needed - native Fetch API support
-- Provides both SSE and streamable HTTP endpoints
+- Uses Cloudflare's `agents` SDK (v0.0.109) with native Worker support
+- Implements McpAgent with Durable Objects for stateful sessions
+- Credentials passed via request headers for multi-tenant support
+- Provides both SSE (`/sse`) and streamable HTTP (`/mcp`) endpoints
+- Live deployment: `https://mcp-supabase.max-smosarski.workers.dev`
 
 ## Prerequisites
 
 - Supabase account with a configured database
 - OpenAI API key
 - Node.js 18+ (for local development)
+- Cloudflare account (free tier works) for Workers deployment
+- Wrangler CLI (`npm install -g wrangler`) for deployment
 
 ## Supabase Setup
 
@@ -167,6 +192,12 @@ Or add to your Claude Desktop configuration:
 
 ### Using the Agents SDK Implementation
 
+1. **Login to Cloudflare:**
+```bash
+wrangler login
+```
+
+2. **Deploy the Worker:**
 ```bash
 # Deploy to production
 npm run deploy
@@ -178,59 +209,130 @@ wrangler deploy
 npm run deploy:dev
 ```
 
+3. **Important Notes:**
+- Uses Durable Objects for stateful MCP sessions
+- Free tier requires `new_sqlite_classes` in migrations
+- Credentials are passed via headers, not environment variables
+- Each request must include credential headers
+
 The deployed worker will be available at:
 - Health check: `https://your-worker.workers.dev/`
 - SSE endpoint: `https://your-worker.workers.dev/sse`
 - MCP endpoint: `https://your-worker.workers.dev/mcp`
 
-### Setting Cloudflare Secrets
+### Cloudflare Configuration
 
-```bash
-wrangler secret put SUPABASE_URL
-wrangler secret put SUPABASE_SERVICE_KEY
-wrangler secret put OPENAI_API_KEY
+**Note:** The Cloudflare Workers implementation uses request headers for credentials, not environment variables. This allows multi-tenant usage where each user provides their own API keys.
+
+**Required Headers for Each Request:**
+- `x-supabase-url`: Your Supabase project URL
+- `x-supabase-key`: Your Supabase service key
+- `x-openai-key`: Your OpenAI API key
+
+**Durable Objects Configuration (in `wrangler.toml`):**
+```toml
+[[durable_objects.bindings]]
+name = "MCP_OBJECT"
+class_name = "KnowledgeBaseMCP"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["KnowledgeBaseMCP"]  # Required for free tier
 ```
 
 ## Usage
 
-### With Your Own Credentials
+### API Examples
 
-Send your API keys with each request via headers:
-
+#### 1. Initialize MCP Session (Required First)
 ```javascript
-fetch('https://your-server.workers.dev/mcp', {
+const response = await fetch('https://mcp-supabase.max-smosarski.workers.dev/mcp', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
     'x-supabase-url': 'https://your-project.supabase.co',
     'x-supabase-key': 'your-service-key',
     'x-openai-key': 'sk-...'
   },
   body: JSON.stringify({
     jsonrpc: '2.0',
-    method: 'tools/search_chunks',
-    params: {
-      query: 'your search query'
-    },
+    method: 'initialize',
+    params: { protocolVersion: '2025-06-18' },
     id: 1
+  })
+});
+// Save the session ID from response headers
+const sessionId = response.headers.get('Mcp-Session-Id');
+```
+
+#### 2. Search Documents
+```javascript
+fetch('https://mcp-supabase.max-smosarski.workers.dev/mcp', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
+    'Mcp-Session-Id': sessionId,
+    'x-supabase-url': 'https://your-project.supabase.co',
+    'x-supabase-key': 'your-service-key',
+    'x-openai-key': 'sk-...'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'tools/call',
+    params: {
+      name: 'search_chunks',
+      arguments: { query: 'your search query', match_count: 5 }
+    },
+    id: 2
+  })
+});
+```
+
+#### 3. List All Files
+```javascript
+fetch('https://mcp-supabase.max-smosarski.workers.dev/mcp', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
+    'Mcp-Session-Id': sessionId,
+    'x-supabase-url': 'https://your-project.supabase.co',
+    'x-supabase-key': 'your-service-key',
+    'x-openai-key': 'sk-...'
+  },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'tools/call',
+    params: {
+      name: 'get_files',
+      arguments: {}
+    },
+    id: 3
   })
 });
 ```
 
 ## Using with Middle Layer
 
-The middle layer server (`middle-layer/server.py`) can connect to either implementation:
+The middle layer server (`middle-layer/server.py`) can connect to any implementation:
 
 ### For Local MCP Server
 ```env
-MCP_URL=http://localhost:3000/mcp
+MCP_SERVER_URL=http://localhost:3000/mcp
 ```
 
 ### For Cloudflare Workers
 ```env
-MCP_URL=https://your-worker.workers.dev/mcp
-MCP_USE_HEADERS=true
+MCP_SERVER_URL=https://mcp-supabase.max-smosarski.workers.dev/mcp
+# Also set your credentials in .env:
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_KEY=your-supabase-key
+OPENAI_API_KEY=your-openai-key
 ```
+
+The middle layer automatically passes credentials as headers to the Cloudflare Worker.
 
 ## Available Tools
 
@@ -263,21 +365,28 @@ mcp-server/
 │       ├── supabase.js
 │       └── openai.js
 ├── wrangler.toml           # Cloudflare Workers configuration
+│                           # Includes Durable Objects bindings
 ├── package.json
 ├── start-mcp.js            # MCP server starter
 ├── start-stdio.js          # STDIO server starter
 └── README.md
 ```
 
-## Environment Variables (Optional)
+## Environment Variables
 
-If you want to set default credentials:
-
+### For Local Development (HTTP/STDIO servers):
 - `SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Your Supabase service key
 - `OPENAI_API_KEY` - Your OpenAI API key
+- `MCP_PORT` - Port for HTTP server (default: 3000)
 
-Note: Request headers always override environment variables.
+### For Cloudflare Workers:
+Credentials are passed via request headers, not environment variables:
+- `x-supabase-url` - Supabase URL in request header
+- `x-supabase-key` - Supabase key in request header
+- `x-openai-key` - OpenAI key in request header
+
+This design allows multiple users to use the same deployment with their own credentials.
 
 ## Testing
 
@@ -300,9 +409,27 @@ npm run db:debug  # Debug database state
 
 ### Cloudflare Workers Issues
 
-1. **Double JSON encoding**: Fixed in the Agents SDK implementation
-2. **Mock request issues**: Eliminated by using native Agents SDK
-3. **SSE streaming**: Fully supported via `/sse` endpoint
+1. **"Invalid binding" error**: 
+   - Ensure Durable Objects are configured in `wrangler.toml`
+   - Use `new_sqlite_classes` for free tier accounts
+   - Check that the binding name matches (`MCP_OBJECT`)
+
+2. **"Missing credentials" error**:
+   - Ensure request headers include all required credentials
+   - Check middle layer is passing credentials in headers
+   - Verify credential values are correct
+
+3. **Build errors with duplicate exports**:
+   - Don't re-export classes that use `export class`
+   - Check for multiple exports of the same name
+
+4. **405 Method Not Allowed**:
+   - Normal for GET/DELETE on certain endpoints
+   - MCP protocol uses specific HTTP methods
+
+5. **Durable Objects on free tier**:
+   - Must use `new_sqlite_classes` instead of `new_classes`
+   - Error code 10097 indicates this issue
 
 ### Local Development Issues
 
@@ -312,19 +439,35 @@ npm run db:debug  # Debug database state
 
 ## Migration Guide
 
-### Cloudflare Workers Deployment
+### From Local to Cloudflare Workers
 
-The Agents SDK implementation (`mcp-agent.js`) is the recommended approach for Cloudflare Workers:
+1. **Update middle layer `.env`:**
+   ```env
+   # Change from:
+   MCP_SERVER_URL=http://localhost:3000/mcp
+   # To:
+   MCP_SERVER_URL=https://mcp-supabase.max-smosarski.workers.dev/mcp
+   ```
 
-1. Uses native Worker APIs without mock objects
-2. Better performance and compatibility
-3. Cleaner code structure extending `McpAgent`
-4. Supports both SSE and streamable HTTP transports
+2. **Ensure credentials in middle layer `.env`:**
+   ```env
+   SUPABASE_URL=your-url
+   SUPABASE_SERVICE_KEY=your-key
+   OPENAI_API_KEY=your-key
+   ```
 
-To deploy:
-1. Use the provided `wrangler-agents.toml` configuration
-2. Deploy using `npm run deploy:agents`
-3. Or use `wrangler deploy --config wrangler-agents.toml`
+3. **Deploy to Cloudflare:**
+   ```bash
+   wrangler deploy
+   ```
+
+### Key Differences from Local Implementation
+
+- **Stateful Sessions**: Uses Durable Objects for session management
+- **Credential Handling**: Via headers, not environment variables
+- **Multi-tenant**: Each request can use different credentials
+- **Edge Computing**: Runs globally on Cloudflare's network
+- **Free Tier Compatible**: Uses SQLite-backed Durable Objects
 
 ## License
 

@@ -176,6 +176,7 @@ export async function handleMcpRequest(request, env) {
       
       // Handle the initialization request
       const mockReq = {
+        method: request.method,
         body: body,
         headers: Object.fromEntries(request.headers.entries())
       };

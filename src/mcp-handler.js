@@ -60,6 +60,7 @@ export async function handleMcpRequest(request, env) {
       
       // Create mock request/response for transport
       const mockReq = {
+        method: request.method,
         body: body,
         headers: Object.fromEntries(request.headers.entries())
       };

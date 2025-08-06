@@ -244,9 +244,6 @@ export class KnowledgeBaseMCP extends McpAgent {
   }
 }
 
-// Export the Durable Object class for Cloudflare
-export { KnowledgeBaseMCP };
-
 // Export the default Worker handler
 export default {
   /**

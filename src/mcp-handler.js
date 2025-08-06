@@ -139,8 +139,10 @@ export async function handleMcpRequest(request, env) {
       
       await transport.handleRequest(mockReq, mockRes, body);
       
-      // responseData might be a string or object, handle both cases
-      const responseBody = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+      // responseData might be a string, object, or undefined
+      // If undefined, return empty object
+      const responseBody = responseData === undefined ? '{}' : 
+                          (typeof responseData === 'string' ? responseData : JSON.stringify(responseData));
       
       return new Response(responseBody, {
         status: 200,
@@ -248,8 +250,10 @@ export async function handleMcpRequest(request, env) {
       
       await transport.handleRequest(mockReq, mockRes, body);
       
-      // responseData might be a string or object, handle both cases
-      const responseBody = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+      // responseData might be a string, object, or undefined
+      // If undefined, return empty object
+      const responseBody = responseData === undefined ? '{}' : 
+                          (typeof responseData === 'string' ? responseData : JSON.stringify(responseData));
       
       return new Response(responseBody, {
         status: 200,

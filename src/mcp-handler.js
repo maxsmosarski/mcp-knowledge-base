@@ -320,11 +320,32 @@ export async function handleMcpRequest(request, env) {
       };
       
       let responseData;
+      let responseHeaders = {};
       const mockRes = {
+        writeHead: (status, headers) => {
+          responseHeaders = { ...responseHeaders, ...headers };
+          return mockRes;
+        },
         status: () => mockRes,
-        setHeader: () => mockRes,
+        setHeader: (key, value) => {
+          responseHeaders[key] = value;
+          return mockRes;
+        },
         json: (data) => { responseData = data; },
-        end: () => {}
+        write: (data) => {
+          if (typeof data === 'string') {
+            responseData = (responseData || '') + data;
+          }
+        },
+        end: (data) => {
+          if (data) {
+            if (typeof data === 'string') {
+              responseData = (responseData || '') + data;
+            } else {
+              responseData = data;
+            }
+          }
+        }
       };
       
       await transport.handleRequest(mockReq, mockRes, body);
@@ -362,11 +383,32 @@ export async function handleMcpRequest(request, env) {
       };
       
       let responseData;
+      let responseHeaders = {};
       const mockRes = {
+        writeHead: (status, headers) => {
+          responseHeaders = { ...responseHeaders, ...headers };
+          return mockRes;
+        },
         status: () => mockRes,
-        setHeader: () => mockRes,
+        setHeader: (key, value) => {
+          responseHeaders[key] = value;
+          return mockRes;
+        },
         json: (data) => { responseData = data; },
-        end: () => {}
+        write: (data) => {
+          if (typeof data === 'string') {
+            responseData = (responseData || '') + data;
+          }
+        },
+        end: (data) => {
+          if (data) {
+            if (typeof data === 'string') {
+              responseData = (responseData || '') + data;
+            } else {
+              responseData = data;
+            }
+          }
+        }
       };
       
       await transport.handleRequest(mockReq, mockRes, body);

@@ -169,13 +169,13 @@ Or add to your Claude Desktop configuration:
 
 ```bash
 # Deploy to production
-npm run deploy:agents
+npm run deploy
 
 # Or use wrangler directly
-wrangler deploy --config wrangler-agents.toml
+wrangler deploy
 
 # Development server (local testing)
-npm run dev:agents
+npm run deploy:dev
 ```
 
 The deployed worker will be available at:
@@ -262,7 +262,7 @@ mcp-server/
 │   └── services/           # Service implementations
 │       ├── supabase.js
 │       └── openai.js
-├── wrangler-agents.toml    # Cloudflare config for Agents SDK
+├── wrangler.toml           # Cloudflare Workers configuration
 ├── package.json
 ├── start-mcp.js            # MCP server starter
 ├── start-stdio.js          # STDIO server starter

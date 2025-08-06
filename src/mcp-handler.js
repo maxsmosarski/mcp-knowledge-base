@@ -322,22 +322,35 @@ export async function handleMcpRequest(request, env) {
       let responseData;
       let responseHeaders = {};
       const mockRes = {
-        writeHead: (status, headers) => {
+        _headersSent: false,
+        _status: 200,
+        _eventHandlers: {},
+        
+        writeHead: function(status, headers = {}) {
+          this._status = status;
           responseHeaders = { ...responseHeaders, ...headers };
-          return mockRes;
+          this._headersSent = true;
+          return this;
         },
-        status: () => mockRes,
-        setHeader: (key, value) => {
+        
+        status: function(code) {
+          this._status = code;
+          return this;
+        },
+        
+        setHeader: function(key, value) {
           responseHeaders[key] = value;
-          return mockRes;
+          return this;
         },
-        json: (data) => { responseData = data; },
-        write: (data) => {
+        
+        write: function(data) {
           if (typeof data === 'string') {
             responseData = (responseData || '') + data;
           }
+          return true;
         },
-        end: (data) => {
+        
+        end: function(data) {
           if (data) {
             if (typeof data === 'string') {
               responseData = (responseData || '') + data;
@@ -345,6 +358,29 @@ export async function handleMcpRequest(request, env) {
               responseData = data;
             }
           }
+          this._headersSent = true;
+        },
+        
+        json: function(data) {
+          responseData = data;
+          this._headersSent = true;
+        },
+        
+        flushHeaders: function() {
+          this._headersSent = true;
+          return this;
+        },
+        
+        on: function(event, callback) {
+          if (!this._eventHandlers[event]) {
+            this._eventHandlers[event] = [];
+          }
+          this._eventHandlers[event].push(callback);
+          return this;
+        },
+        
+        get headersSent() {
+          return this._headersSent;
         }
       };
       
@@ -385,22 +421,35 @@ export async function handleMcpRequest(request, env) {
       let responseData;
       let responseHeaders = {};
       const mockRes = {
-        writeHead: (status, headers) => {
+        _headersSent: false,
+        _status: 200,
+        _eventHandlers: {},
+        
+        writeHead: function(status, headers = {}) {
+          this._status = status;
           responseHeaders = { ...responseHeaders, ...headers };
-          return mockRes;
+          this._headersSent = true;
+          return this;
         },
-        status: () => mockRes,
-        setHeader: (key, value) => {
+        
+        status: function(code) {
+          this._status = code;
+          return this;
+        },
+        
+        setHeader: function(key, value) {
           responseHeaders[key] = value;
-          return mockRes;
+          return this;
         },
-        json: (data) => { responseData = data; },
-        write: (data) => {
+        
+        write: function(data) {
           if (typeof data === 'string') {
             responseData = (responseData || '') + data;
           }
+          return true;
         },
-        end: (data) => {
+        
+        end: function(data) {
           if (data) {
             if (typeof data === 'string') {
               responseData = (responseData || '') + data;
@@ -408,6 +457,29 @@ export async function handleMcpRequest(request, env) {
               responseData = data;
             }
           }
+          this._headersSent = true;
+        },
+        
+        json: function(data) {
+          responseData = data;
+          this._headersSent = true;
+        },
+        
+        flushHeaders: function() {
+          this._headersSent = true;
+          return this;
+        },
+        
+        on: function(event, callback) {
+          if (!this._eventHandlers[event]) {
+            this._eventHandlers[event] = [];
+          }
+          this._eventHandlers[event].push(callback);
+          return this;
+        },
+        
+        get headersSent() {
+          return this._headersSent;
         }
       };
       

@@ -71,13 +71,28 @@ export class KnowledgeBaseMCP extends McpAgent {
       'upload_image',
       'Upload an image file and generate AI description for search',
       {
-        file_path: z.string().describe('Path to the image file to upload'),
-        original_filename: z.string().optional().describe('Original filename to preserve')
+        file_base64: z.string().describe('Base64-encoded image data'),
+        original_filename: z.string().describe('Original filename with extension')
       },
-      async ({ file_path, original_filename }) => {
+      async ({ file_base64, original_filename }) => {
         try {
+          console.log('[mcp-agent] upload_image called with filename:', original_filename);
           const credentials = getCredentials();
-          const result = await uploadImage({ file_path, original_filename, credentials });
+          
+          // Convert base64 to Uint8Array for Cloudflare Workers
+          const binaryString = atob(file_base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          console.log('[mcp-agent] Converted base64 to Uint8Array, size:', bytes.length);
+          
+          const result = await uploadImage({ 
+            file_data: bytes, 
+            original_filename, 
+            credentials 
+          });
+          
           return {
             content: [{
               type: 'text',
@@ -85,10 +100,11 @@ export class KnowledgeBaseMCP extends McpAgent {
             }]
           };
         } catch (error) {
+          console.error('[mcp-agent] upload_image error:', error);
           return {
             content: [{
               type: 'text',
-              text: `Error: ${error.message}`
+              text: `Error: ${error.message}\nDetails: ${error.stack}`
             }],
             isError: true
           };
@@ -252,6 +268,7 @@ export default {
    */
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    console.log(`[Worker] ${request.method} ${url.pathname}`);
     
     // Extract credentials from headers for this request
     const credentials = {
@@ -259,6 +276,11 @@ export default {
       supabaseKey: request.headers.get('x-supabase-key'),
       openaiKey: request.headers.get('x-openai-key')
     };
+    console.log('[Worker] Credentials provided:', {
+      supabaseUrl: credentials.supabaseUrl ? 'yes' : 'no',
+      supabaseKey: credentials.supabaseKey ? 'yes' : 'no',
+      openaiKey: credentials.openaiKey ? 'yes' : 'no'
+    });
     
     // Store credentials in context for the Durable Object
     ctx.props = credentials;
@@ -286,7 +308,18 @@ export default {
     
     // Streamable HTTP endpoint (recommended)
     if (url.pathname === '/mcp') {
-      return KnowledgeBaseMCP.serve('/mcp').fetch(request, env, ctx);
+      console.log('[Worker] Handling MCP request');
+      try {
+        const response = await KnowledgeBaseMCP.serve('/mcp').fetch(request, env, ctx);
+        console.log('[Worker] MCP response status:', response.status);
+        return response;
+      } catch (error) {
+        console.error('[Worker] MCP handler error:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
     }
     
     // 404 for unknown paths

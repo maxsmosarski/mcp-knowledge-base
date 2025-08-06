@@ -1,7 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { PDFDocument } from 'pdf-lib';
-import sharp from 'sharp';
 import { supabase, createSupabaseClient } from '../services/supabase.js';
 import { generateEmbedding } from '../services/openai.js';
 import { uploadImage } from './upload-image.js';
@@ -20,72 +19,8 @@ function chunkText(text, maxWords = 500) {
   return chunks;
 }
 
-async function extractImagesFromPDF(pdfPath, documentId) {
-  try {
-    const pdfBuffer = await fs.readFile(pdfPath);
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const extractedImages = [];
-    
-    // Get all pages
-    const pages = pdfDoc.getPages();
-    
-    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
-      const page = pages[pageIndex];
-      const xObjects = page.node.Resources?.XObject;
-      
-      if (!xObjects) continue;
-      
-      // Iterate through XObjects looking for images
-      const entries = Object.entries(xObjects);
-      for (let imgIndex = 0; imgIndex < entries.length; imgIndex++) {
-        const [name, ref] = entries[imgIndex];
-        
-        try {
-          const xObject = pdfDoc.context.lookup(ref);
-          
-          // Check if it's an image
-          if (xObject?.dict?.lookup('Type')?.name === 'XObject' && 
-              xObject?.dict?.lookup('Subtype')?.name === 'Image') {
-            
-            // Extract image data
-            const width = xObject.dict.lookup('Width')?.value;
-            const height = xObject.dict.lookup('Height')?.value;
-            const imgData = xObject.contents;
-            
-            if (imgData && width && height) {
-              // Save image temporarily
-              const tempImagePath = path.join('/tmp', `pdf_extract_${documentId}_p${pageIndex + 1}_img${imgIndex + 1}.png`);
-              
-              // Convert raw image data to PNG using sharp
-              await sharp(imgData, {
-                raw: {
-                  width: width,
-                  height: height,
-                  channels: 3
-                }
-              })
-              .png()
-              .toFile(tempImagePath);
-              
-              extractedImages.push({
-                path: tempImagePath,
-                page: pageIndex + 1,
-                originalName: `page_${pageIndex + 1}_image_${imgIndex + 1}.png`
-              });
-            }
-          }
-        } catch (imgError) {
-          console.log(`Could not extract image ${name} from page ${pageIndex + 1}: ${imgError.message}`);
-        }
-      }
-    }
-    
-    return extractedImages;
-  } catch (error) {
-    console.error('Error extracting images from PDF:', error);
-    return [];
-  }
-}
+// Image extraction from PDFs has been removed for Cloudflare Workers compatibility
+// PDFs will still be processed for text content
 
 async function processPDF(filePath) {
   // Use pdfjs-dist which doesn't have initialization issues
@@ -144,7 +79,6 @@ export async function uploadDocument({ file_path, credentials = null }) {
     let content = '';
     let metadata = {};
     let documentType = 'text';
-    let extractedImages = [];
     
     // Handle different file types
     if (fileExt === '.pdf') {
@@ -190,12 +124,7 @@ export async function uploadDocument({ file_path, credentials = null }) {
       throw new Error(`Failed to store document: ${docError.message}`);
     }
     
-    // Extract images from PDF if applicable
-    if (fileExt === '.pdf') {
-      console.log('Attempting to extract images from PDF...');
-      extractedImages = await extractImagesFromPDF(file_path, doc.id);
-      console.log(`Found ${extractedImages.length} images in PDF`);
-    }
+    // Image extraction from PDFs removed for Cloudflare Workers compatibility
     
     // Chunk the text content
     const chunks = chunkText(content, 500);
@@ -220,41 +149,8 @@ export async function uploadDocument({ file_path, credentials = null }) {
     
     await Promise.all(chunkPromises);
     
-    // Process extracted images
+    // Image extraction code removed for Cloudflare Workers compatibility
     const uploadedImages = [];
-    for (const extractedImage of extractedImages) {
-      try {
-        console.log(`Uploading extracted image from page ${extractedImage.page}...`);
-        const imageResult = await uploadImage({
-          file_path: extractedImage.path,
-          original_filename: `${filename}_${extractedImage.originalName}`,
-          credentials
-        });
-        
-        if (imageResult.success) {
-          uploadedImages.push({
-            page: extractedImage.page,
-            filename: extractedImage.originalName,
-            document_id: imageResult.document.id
-          });
-          
-          // Link the image to the parent PDF document
-          await supabaseClient
-            .from('document_relationships')
-            .insert({
-              parent_document_id: doc.id,
-              child_document_id: imageResult.document.id,
-              relationship_type: 'pdf_extracted_image',
-              metadata: { page: extractedImage.page }
-            });
-        }
-        
-        // Clean up temporary file
-        await fs.unlink(extractedImage.path).catch(() => {});
-      } catch (imgError) {
-        console.error(`Failed to process extracted image: ${imgError.message}`);
-      }
-    }
     
     return {
       success: true,

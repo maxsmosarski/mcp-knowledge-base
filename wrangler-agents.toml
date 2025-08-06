@@ -1,0 +1,11 @@
+name = "mcp-knowledge-base-agents"
+main = "src/mcp-agent.js"
+compatibility_date = "2025-01-01"
+
+# Optional: Add your credentials as secrets
+# Run these commands to set secrets:
+# wrangler secret put SUPABASE_URL
+# wrangler secret put SUPABASE_SERVICE_KEY  
+# wrangler secret put OPENAI_API_KEY
+
+# Or pass credentials via headers from clients

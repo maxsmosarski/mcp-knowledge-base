@@ -9,7 +9,7 @@ class_name = "KnowledgeBaseMCP"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["KnowledgeBaseMCP"]
+new_sqlite_classes = ["KnowledgeBaseMCP"]
 
 # Optional: Add your credentials as secrets
 # Run these commands to set secrets:

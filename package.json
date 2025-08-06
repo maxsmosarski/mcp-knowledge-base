@@ -40,6 +40,9 @@
     "ws": "^8.18.3",
     "zod": "^3.25.76"
   },
+  "devDependencies": {
+    "wrangler": "^4.28.0"
+  },
   "keywords": [
     "mcp",
     "mcp-server",
@@ -52,8 +55,5 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/yourusername/mcp-knowledge-base.git"
-  },
-  "devDependencies": {
-    "wrangler": "^4.28.0"
   }
 }

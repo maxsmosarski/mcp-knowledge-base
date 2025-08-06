@@ -1,0 +1,51 @@
+{
+  "name": "@yourusername/mcp-knowledge-base",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server for document upload and semantic search with Supabase",
+  "main": "src/mcp-server.js",
+  "bin": {
+    "supabass-mcp": "./start-mcp.js",
+    "supabass-stdio": "./start-stdio.js"
+  },
+  "scripts": {
+    "start": "node start-mcp.js",
+    "start:mcp": "node start-mcp.js",
+    "start:stdio": "node start-stdio.js",
+    "start:rest": "node src/index.js",
+    "dev": "node --watch start-mcp.js",
+    "dev:stdio": "node --watch start-stdio.js",
+    "test:supabase": "node ../test-scripts/test-supabase-connection.js",
+    "test:full": "node ../test-scripts/test-mcp-full.js",
+    "test:client": "node ../test-scripts/test-mcp-client.js",
+    "db:clean": "node ../test-scripts/clean-database.js",
+    "db:debug": "node ../test-scripts/debug-database.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "openai": "^4.67.3",
+    "pdf-lib": "^1.17.1",
+    "pdf2pic": "^3.2.0",
+    "pdfjs-dist": "^5.4.54",
+    "sharp": "^0.34.3",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "knowledge-base",
+    "semantic-search",
+    "supabase"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/mcp-knowledge-base.git"
+  }
+}

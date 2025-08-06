@@ -1,14 +1,7 @@
 name = "mcp-knowledge-base-server"
 main = "src/worker.js"
 compatibility_date = "2024-01-01"
-
-# Node.js compatibility - REQUIRED for your dependencies
-node_compat = true
-
-# Build configuration
-[build]
-command = "npm install"
-upload_dir = "mcp-server"
+nodejs_compat = true
 
 # Environment variables (optional defaults)
 [vars]

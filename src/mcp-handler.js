@@ -138,7 +138,10 @@ export async function handleMcpRequest(request, env) {
       
       await transport.handleRequest(mockReq, mockRes, body);
       
-      return new Response(JSON.stringify(responseData), {
+      // responseData might be a string or object, handle both cases
+      const responseBody = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+      
+      return new Response(responseBody, {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
@@ -243,7 +246,10 @@ export async function handleMcpRequest(request, env) {
       
       await transport.handleRequest(mockReq, mockRes, body);
       
-      return new Response(JSON.stringify(responseData), {
+      // responseData might be a string or object, handle both cases
+      const responseBody = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
+      
+      return new Response(responseBody, {
         status: 200,
         headers: {
           'Content-Type': 'application/json',

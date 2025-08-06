@@ -1,6 +1,7 @@
-name = "mcp-knowledge-base-agents"
+name = "mcp-supabase"
 main = "src/mcp-agent.js"
 compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
 
 # Optional: Add your credentials as secrets
 # Run these commands to set secrets:

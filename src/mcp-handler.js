@@ -1,4 +1,8 @@
-import express from 'express';
+/**
+ * MCP Request Handler for Cloudflare Workers
+ * Handles MCP protocol requests without Express dependencies
+ */
+
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -12,16 +16,20 @@ import { getDocument } from './tools/get-document.js';
 import { deleteDocument } from './tools/delete-document.js';
 import { deleteDocuments } from './tools/delete-documents.js';
 
+// Store transports and credentials for each session
+const transports = new Map();
+const sessionCredentials = new Map();
+
 // Helper to get credentials for a session
 function getSessionCredentials(sessionId) {
-  return sessionCredentials[sessionId] || {
+  return sessionCredentials.get(sessionId) || {
     supabaseUrl: process.env.SUPABASE_URL,
     supabaseKey: process.env.SUPABASE_SERVICE_KEY,
     openaiKey: process.env.OPENAI_API_KEY,
   };
 }
 
-// Create MCP server instance
+// Create and configure MCP server
 const server = new McpServer({
   name: 'knowledge-base',
   version: '1.0.0',
@@ -32,7 +40,7 @@ const server = new McpServer({
   }
 });
 
-// Register the upload_document tool
+// Register tools with credential support
 server.tool(
   'upload_document',
   'Upload a document to the knowledge base',
@@ -65,7 +73,6 @@ server.tool(
   }
 );
 
-// Register the upload_image tool
 server.tool(
   'upload_image',
   'Upload an image file and generate AI description for search',
@@ -99,7 +106,6 @@ server.tool(
   }
 );
 
-// Register the search_chunks tool
 server.tool(
   'search_chunks',
   'Search for similar chunks in the knowledge base',
@@ -108,12 +114,10 @@ server.tool(
     match_count: z.number().default(5).describe('Number of results to return')
   },
   async ({ query, match_count }, extra) => {
-    console.log('search_chunks tool handler called with:', { query, match_count });
     try {
       const credentials = getSessionCredentials(extra.sessionId);
       const result = await searchChunks({ query, match_count, credentials });
-      console.log('search_chunks result:', JSON.stringify(result, null, 2));
-      const response = {
+      return {
         content: [
           {
             type: 'text',
@@ -121,10 +125,7 @@ server.tool(
           }
         ]
       };
-      console.log('Returning response from search_chunks handler');
-      return response;
     } catch (error) {
-      console.error('Error in search_chunks handler:', error);
       return {
         content: [
           {
@@ -138,7 +139,6 @@ server.tool(
   }
 );
 
-// Register the get_files tool
 server.tool(
   'get_files',
   'Get list of all documents in the knowledge base',
@@ -169,7 +169,6 @@ server.tool(
   }
 );
 
-// Register the get_document tool
 server.tool(
   'get_document',
   'Get a specific document by filename or id, including images with their URLs',
@@ -203,7 +202,6 @@ server.tool(
   }
 );
 
-// Register the delete_document tool
 server.tool(
   'delete_document',
   'Delete a document by filename or id from the knowledge base',
@@ -237,7 +235,6 @@ server.tool(
   }
 );
 
-// Register the delete_documents tool
 server.tool(
   'delete_documents',
   'Delete multiple documents by their IDs from the knowledge base',
@@ -270,135 +267,139 @@ server.tool(
   }
 );
 
-// Set up Express app
-const app = express();
-app.use(express.json());
-
-// CORS headers for MCP clients
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Mcp-Session-Id');
-  res.header('Access-Control-Expose-Headers', 'Mcp-Session-Id');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
-// Store transports for each session
-const transports = {};
-
-// Store credentials for each session
-const sessionCredentials = {};
-
-// Configure MCP endpoint
-app.post('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'];
-  console.log('MCP request:', req.body.method, 'Session:', sessionId);
-  console.log('Request body:', JSON.stringify(req.body, null, 2));
-  
-  // Extract credentials from headers
-  const credentials = {
-    supabaseUrl: req.headers['x-supabase-url'] || process.env.SUPABASE_URL,
-    supabaseKey: req.headers['x-supabase-key'] || process.env.SUPABASE_SERVICE_KEY,
-    openaiKey: req.headers['x-openai-key'] || process.env.OPENAI_API_KEY,
-  };
-  
-  // Validate that we have all required credentials
-  if (!credentials.supabaseUrl || !credentials.supabaseKey || !credentials.openaiKey) {
-    const missing = [];
-    if (!credentials.supabaseUrl) missing.push('x-supabase-url');
-    if (!credentials.supabaseKey) missing.push('x-supabase-key');
-    if (!credentials.openaiKey) missing.push('x-openai-key');
-    
-    console.error('Missing required credentials:', missing.join(', '));
-    return res.status(401).json({ 
-      error: 'Missing required credentials',
-      missing: missing,
-      message: 'Please provide credentials via headers or environment variables'
-    });
-  }
-  
-  // Store credentials for this session
-  if (sessionId) {
-    sessionCredentials[sessionId] = credentials;
-  }
-  
+/**
+ * Handle MCP request in Cloudflare Worker context
+ */
+export async function handleMcpRequest(request, env) {
   try {
-    // Reuse existing transport for session
-    if (sessionId && transports[sessionId]) {
-      console.log('Using existing transport for session:', sessionId);
-      const transport = transports[sessionId];
-      console.log('About to call transport.handleRequest...');
-      await transport.handleRequest(req, res, req.body);
-      console.log('transport.handleRequest completed');
+    const sessionId = request.headers.get('mcp-session-id');
+    const body = await request.json();
+    
+    console.log('MCP request:', body.method, 'Session:', sessionId);
+    
+    // Extract credentials from headers
+    const credentials = {
+      supabaseUrl: request.headers.get('x-supabase-url') || env.SUPABASE_URL,
+      supabaseKey: request.headers.get('x-supabase-key') || env.SUPABASE_SERVICE_KEY,
+      openaiKey: request.headers.get('x-openai-key') || env.OPENAI_API_KEY,
+    };
+    
+    // Validate credentials
+    if (!credentials.supabaseUrl || !credentials.supabaseKey || !credentials.openaiKey) {
+      const missing = [];
+      if (!credentials.supabaseUrl) missing.push('x-supabase-url');
+      if (!credentials.supabaseKey) missing.push('x-supabase-key');
+      if (!credentials.openaiKey) missing.push('x-openai-key');
       
-      // Check if response was sent
-      if (!res.headersSent) {
-        console.log('WARNING: Response headers not sent after handleRequest');
-      }
-      return;
+      return new Response(JSON.stringify({ 
+        error: 'Missing required credentials',
+        missing: missing,
+        message: 'Please provide credentials via headers'
+      }), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
     }
     
-    // Create new transport only for initialization requests
-    console.log('Checking if initialize request:', JSON.stringify(req.body));
-    console.log('isInitializeRequest result:', isInitializeRequest(req.body));
-    if (!sessionId && isInitializeRequest(req.body)) {
+    // Store credentials for this session
+    if (sessionId) {
+      sessionCredentials.set(sessionId, credentials);
+    }
+    
+    // Reuse existing transport for session
+    if (sessionId && transports.has(sessionId)) {
+      const transport = transports.get(sessionId);
+      
+      // Create mock request/response for transport
+      const mockReq = {
+        body: body,
+        headers: Object.fromEntries(request.headers.entries())
+      };
+      
+      let responseData;
+      const mockRes = {
+        status: () => mockRes,
+        setHeader: () => mockRes,
+        json: (data) => { responseData = data; },
+        end: () => {}
+      };
+      
+      await transport.handleRequest(mockReq, mockRes, body);
+      
+      return new Response(JSON.stringify(responseData), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Mcp-Session-Id': sessionId
+        }
+      });
+    }
+    
+    // Create new transport for initialization requests
+    if (!sessionId && isInitializeRequest(body)) {
       const newSessionId = randomUUID();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => newSessionId,
-        enableDnsRebindingProtection: false, // Disable for development
-        allowedOrigins: ['*'] // Allow all origins for now
+        enableDnsRebindingProtection: false,
+        allowedOrigins: ['*']
       });
       
       // Connect the transport to the server
       await server.connect(transport);
       
-      // Set the session ID header before handling the request
-      res.setHeader('Mcp-Session-Id', newSessionId);
+      // Store transport and credentials
+      transports.set(newSessionId, transport);
+      sessionCredentials.set(newSessionId, credentials);
       
-      // Handle the request
-      await transport.handleRequest(req, res, req.body);
+      // Handle the initialization request
+      const mockReq = {
+        body: body,
+        headers: Object.fromEntries(request.headers.entries())
+      };
       
-      // Check if response was sent
-      if (!res.headersSent) {
-        console.log('WARNING: Response headers not sent after initialize handleRequest');
-      }
+      let responseData;
+      const mockRes = {
+        status: () => mockRes,
+        setHeader: () => mockRes,
+        json: (data) => { responseData = data; },
+        end: () => {}
+      };
       
-      // Store transport for future requests
-      transports[newSessionId] = transport;
+      await transport.handleRequest(mockReq, mockRes, body);
       
-      // Store credentials for the new session
-      sessionCredentials[newSessionId] = credentials;
-      return;
+      return new Response(JSON.stringify(responseData), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Mcp-Session-Id': newSessionId
+        }
+      });
     }
     
-    // Invalid request - no session and not an initialize request
-    res.status(400).json({ error: 'Invalid request: Missing session ID or not an initialize request' });
+    // Invalid request
+    return new Response(JSON.stringify({ 
+      error: 'Invalid request: Missing session ID or not an initialize request' 
+    }), {
+      status: 400,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+    
   } catch (error) {
     console.error('Error handling MCP request:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
   }
-});
-
-// Health check endpoint (non-MCP)
-app.get('/', (_, res) => {
-  res.json({
-    name: 'knowledge-base',
-    version: '1.0.0',
-    status: 'running',
-    type: 'MCP Server (Streamable HTTP)',
-    endpoint: '/mcp'
-  });
-});
-
-// Start server
-const PORT = process.env.MCP_PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`MCP Knowledge Base Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/`);
-  console.log(`MCP endpoint: http://localhost:${PORT}/mcp`);
-  console.log('\nThis is now a proper MCP server using Streamable HTTP transport!');
-  console.log('It can be used with Claude Desktop and other MCP clients.');
-});
+}

@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
-import { supabase } from '../services/supabase.js';
+import { supabase, createSupabaseClient } from '../services/supabase.js';
 import { generateEmbedding } from '../services/openai.js';
 import { uploadImage } from './upload-image.js';
 
@@ -136,7 +136,7 @@ async function processPDF(filePath) {
   };
 }
 
-export async function uploadDocument({ file_path }) {
+export async function uploadDocument({ file_path, credentials = null }) {
   try {
     const filename = path.basename(file_path);
     const fileExt = path.extname(filename).toLowerCase();
@@ -168,8 +168,14 @@ export async function uploadDocument({ file_path }) {
       content = '[No readable text content found in PDF]';
     }
     
+    // Use provided credentials or fall back to default client
+    const supabaseClient = credentials ? createSupabaseClient(credentials) : supabase;
+    if (!supabaseClient) {
+      throw new Error('No Supabase client available - provide credentials or set environment variables');
+    }
+    
     // Store document in database
-    const { data: doc, error: docError } = await supabase
+    const { data: doc, error: docError } = await supabaseClient
       .from('documents')
       .insert({ 
         filename, 
@@ -197,9 +203,9 @@ export async function uploadDocument({ file_path }) {
     
     // Process text chunks
     const chunkPromises = chunks.map(async (chunkContent, index) => {
-      const embedding = await generateEmbedding(chunkContent);
+      const embedding = await generateEmbedding(chunkContent, credentials);
       
-      const { error: chunkError } = await supabase
+      const { error: chunkError } = await supabaseClient
         .from('document_chunks')
         .insert({
           document_id: doc.id,
@@ -221,7 +227,8 @@ export async function uploadDocument({ file_path }) {
         console.log(`Uploading extracted image from page ${extractedImage.page}...`);
         const imageResult = await uploadImage({
           file_path: extractedImage.path,
-          original_filename: `${filename}_${extractedImage.originalName}`
+          original_filename: `${filename}_${extractedImage.originalName}`,
+          credentials
         });
         
         if (imageResult.success) {
@@ -232,7 +239,7 @@ export async function uploadDocument({ file_path }) {
           });
           
           // Link the image to the parent PDF document
-          await supabase
+          await supabaseClient
             .from('document_relationships')
             .insert({
               parent_document_id: doc.id,

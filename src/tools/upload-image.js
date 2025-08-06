@@ -1,9 +1,33 @@
-import { supabase, storage } from '../services/supabase.js';
+import { supabase, createSupabaseClient, storage } from '../services/supabase.js';
 import { generateEmbedding, describeImage, createImageChunks } from '../services/openai.js';
 import fs from 'fs';
 import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
-export async function uploadImage({ file_path, original_filename }) {
+// Helper function to upload image to storage using dynamic credentials
+async function uploadImageToStorage(filePath, originalFileName, supabaseClient) {
+  const fileBuffer = fs.readFileSync(filePath);
+  const fileExtension = path.extname(originalFileName);
+  const uniqueFileName = `${uuidv4()}${fileExtension}`;
+  const storagePath = `public/${uniqueFileName}`;
+
+  const { data, error } = await supabaseClient.storage
+    .from('images')
+    .upload(storagePath, fileBuffer, {
+      contentType: storage.getMimeType(fileExtension),
+      upsert: false
+    });
+
+  if (error) throw error;
+
+  const { data: { publicUrl } } = supabaseClient.storage
+    .from('images')
+    .getPublicUrl(storagePath);
+
+  return { path: data.path, publicUrl, fileName: originalFileName, uniqueFileName };
+}
+
+export async function uploadImage({ file_path, original_filename, credentials = null }) {
   try {
     // Validate input
     if (!file_path) {
@@ -24,14 +48,20 @@ export async function uploadImage({ file_path, original_filename }) {
     const fileName = original_filename || path.basename(file_path);
     console.log(`Starting image upload workflow for: ${fileName}`);
 
+    // Use provided credentials or fall back to default client
+    const supabaseClient = credentials ? createSupabaseClient(credentials) : supabase;
+    if (!supabaseClient) {
+      throw new Error('No Supabase client available - provide credentials or set environment variables');
+    }
+    
     // Step 1: Upload to Supabase Storage
     console.log('Uploading to Supabase Storage...');
-    const uploadResult = await storage.uploadImage(file_path, fileName);
+    const uploadResult = await uploadImageToStorage(file_path, fileName, supabaseClient);
     const { publicUrl, path: storagePath } = uploadResult;
 
     // Step 2: Generate AI description
     console.log('Generating AI description...');
-    const description = await describeImage(publicUrl);
+    const description = await describeImage(publicUrl, credentials);
 
     // Step 3: Get image metadata
     const stats = fs.statSync(file_path);
@@ -44,7 +74,7 @@ export async function uploadImage({ file_path, original_filename }) {
 
     // Step 4: Store document record
     console.log('Storing document record...');
-    const { data: document, error: docError } = await supabase
+    const { data: document, error: docError } = await supabaseClient
       .from('documents')
       .insert({
         filename: fileName,
@@ -67,10 +97,10 @@ export async function uploadImage({ file_path, original_filename }) {
     let chunksCreated = 0;
     for (const chunk of chunks) {
       // Generate embedding for chunk
-      const embedding = await generateEmbedding(chunk.content);
+      const embedding = await generateEmbedding(chunk.content, credentials);
       
       // Store chunk with embedding
-      const { error: chunkError } = await supabase
+      const { error: chunkError } = await supabaseClient
         .from('document_chunks')
         .insert({
           document_id: document.id,

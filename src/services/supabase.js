@@ -12,11 +12,17 @@ config({ path: join(__dirname, '../../.env') });
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_KEY');
-}
+// Only create default client if env vars are present
+export const supabase = (supabaseUrl && supabaseKey) ? 
+  createClient(supabaseUrl, supabaseKey) : null;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Function to create a Supabase client with custom credentials
+export function createSupabaseClient(credentials) {
+  if (!credentials || !credentials.supabaseUrl || !credentials.supabaseKey) {
+    throw new Error('Missing Supabase credentials');
+  }
+  return createClient(credentials.supabaseUrl, credentials.supabaseKey);
+}
 
 // Storage utility functions
 export const storage = {

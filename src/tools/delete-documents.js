@@ -1,12 +1,18 @@
-import { supabase, storage } from '../services/supabase.js';
+import { supabase, createSupabaseClient, storage } from '../services/supabase.js';
 
 /**
  * Delete multiple documents by IDs from the knowledge base
  * This will also delete all associated chunks and images from storage
  */
-export async function deleteDocuments({ document_ids }) {
+export async function deleteDocuments({ document_ids, credentials = null }) {
   try {
     console.log('Deleting documents:', { document_ids });
+    
+    // Use provided credentials or fall back to default client
+    const supabaseClient = credentials ? createSupabaseClient(credentials) : supabase;
+    if (!supabaseClient) {
+      throw new Error('No Supabase client available - provide credentials or set environment variables');
+    }
 
     // Validate that document_ids is provided and is an array
     if (!document_ids || !Array.isArray(document_ids) || document_ids.length === 0) {
@@ -14,7 +20,7 @@ export async function deleteDocuments({ document_ids }) {
     }
 
     // First, find all the documents
-    const { data: documents, error: findError } = await supabase
+    const { data: documents, error: findError } = await supabaseClient
       .from('documents')
       .select('id, filename, content_type, file_url')
       .in('id', document_ids);
@@ -42,7 +48,7 @@ export async function deleteDocuments({ document_ids }) {
             console.log('Deleting image from storage:', filePath);
             
             imageDeletions.push(
-              supabase.storage
+              supabaseClient.storage
                 .from('images')
                 .remove([filePath])
                 .then(({ error }) => {
@@ -65,7 +71,7 @@ export async function deleteDocuments({ document_ids }) {
     }
 
     // Delete all documents (cascade will delete chunks)
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseClient
       .from('documents')
       .delete()
       .in('id', document_ids);

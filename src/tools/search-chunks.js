@@ -1,18 +1,24 @@
-import { supabase } from '../services/supabase.js';
+import { supabase, createSupabaseClient } from '../services/supabase.js';
 import { generateEmbedding } from '../services/openai.js';
 
-export async function searchChunks({ query, match_count = 5 }) {
+export async function searchChunks({ query, match_count = 5, credentials = null }) {
   try {
     console.log('searchChunks called with:', { query, match_count });
     
+    // Use provided credentials or fall back to default client
+    const supabaseClient = credentials ? createSupabaseClient(credentials) : supabase;
+    if (!supabaseClient) {
+      throw new Error('No Supabase client available - provide credentials or set environment variables');
+    }
+    
     // Generate embedding for the search query
     console.log('Generating embedding for query...');
-    const queryEmbedding = await generateEmbedding(query);
+    const queryEmbedding = await generateEmbedding(query, credentials);
     console.log('Embedding generated, length:', queryEmbedding?.length);
     
     // Search for similar chunks using the Supabase function
     console.log('Calling Supabase search_chunks function...');
-    const { data, error } = await supabase.rpc('search_chunks', {
+    const { data, error } = await supabaseClient.rpc('search_chunks', {
       query_embedding: queryEmbedding,
       match_count: match_count,
       similarity_threshold: 0.3

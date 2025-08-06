@@ -1,9 +1,15 @@
-import { supabase } from '../services/supabase.js';
+import { supabase, createSupabaseClient } from '../services/supabase.js';
 
-export async function getDocument({ filename, id }) {
+export async function getDocument({ filename, id, credentials = null }) {
   try {
+    // Use provided credentials or fall back to default client
+    const supabaseClient = credentials ? createSupabaseClient(credentials) : supabase;
+    if (!supabaseClient) {
+      throw new Error('No Supabase client available - provide credentials or set environment variables');
+    }
+    
     // Build query
-    let query = supabase
+    let query = supabaseClient
       .from('documents')
       .select('*');
     

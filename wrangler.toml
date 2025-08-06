@@ -1,0 +1,22 @@
+name = "mcp-knowledge-base-server"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+
+# Node.js compatibility - REQUIRED for your dependencies
+node_compat = true
+
+# Build configuration
+[build]
+command = "npm install"
+upload_dir = "mcp-server"
+
+# Environment variables (optional defaults)
+[vars]
+MCP_PORT = "3000"
+
+# Note about secrets:
+# After deployment, add these via Cloudflare dashboard (Settings > Variables)
+# - SUPABASE_URL (optional default)
+# - SUPABASE_SERVICE_KEY (optional default)
+# - OPENAI_API_KEY (optional default)
+# These are optional - users will provide their own via headers

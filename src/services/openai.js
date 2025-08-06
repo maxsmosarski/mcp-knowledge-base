@@ -8,14 +8,24 @@ config({ path: join(__dirname, '../../.env') });
 
 const apiKey = process.env.OPENAI_API_KEY;
 
-if (!apiKey) {
-  throw new Error('Missing OPENAI_API_KEY');
+// Only create default client if env var is present
+export const openai = apiKey ? new OpenAI({ apiKey }) : null;
+
+// Function to create an OpenAI client with custom credentials
+export function createOpenAIClient(credentials) {
+  if (!credentials || !credentials.openaiKey) {
+    throw new Error('Missing OpenAI API key');
+  }
+  return new OpenAI({ apiKey: credentials.openaiKey });
 }
 
-export const openai = new OpenAI({ apiKey });
-
-export async function generateEmbedding(text) {
-  const response = await openai.embeddings.create({
+export async function generateEmbedding(text, credentials = null) {
+  const client = credentials ? createOpenAIClient(credentials) : openai;
+  if (!client) {
+    throw new Error('No OpenAI client available - provide credentials or set OPENAI_API_KEY');
+  }
+  
+  const response = await client.embeddings.create({
     model: 'text-embedding-3-small',
     input: text
   });
@@ -26,9 +36,14 @@ export async function generateEmbedding(text) {
 /**
  * Analyze image and generate comprehensive description using GPT-4V
  */
-export async function describeImage(imageUrl) {
+export async function describeImage(imageUrl, credentials = null) {
+  const client = credentials ? createOpenAIClient(credentials) : openai;
+  if (!client) {
+    throw new Error('No OpenAI client available - provide credentials or set OPENAI_API_KEY');
+  }
+  
   try {
-    const response = await openai.chat.completions.create({
+    const response = await client.chat.completions.create({
       model: "gpt-4o",
       messages: [{
         role: "user",

@@ -314,9 +314,6 @@ fetch('https://mcp-supabase.max-smosarski.workers.dev/mcp', {
 });
 ```
 
-## Using with Middle Layer
-
-The middle layer server (`middle-layer/server.py`) can connect to any implementation:
 
 ### For Local MCP Server
 ```env
@@ -460,15 +457,3 @@ npm run db:debug  # Debug database state
    ```bash
    wrangler deploy
    ```
-
-### Key Differences from Local Implementation
-
-- **Stateful Sessions**: Uses Durable Objects for session management
-- **Credential Handling**: Via headers, not environment variables
-- **Multi-tenant**: Each request can use different credentials
-- **Edge Computing**: Runs globally on Cloudflare's network
-- **Free Tier Compatible**: Uses SQLite-backed Durable Objects
-
-## License
-
-MIT

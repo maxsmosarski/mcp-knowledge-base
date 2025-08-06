@@ -1,10 +1,14 @@
 import OpenAI from 'openai';
-import { config } from 'dotenv';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: join(__dirname, '../../.env') });
+// Only load .env in Node.js environment (not in Cloudflare Workers)
+if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+  try {
+    const { config } = await import('dotenv');
+    config();
+  } catch (e) {
+    // dotenv not available in Workers, which is fine
+  }
+}
 
 const apiKey = process.env.OPENAI_API_KEY;
 

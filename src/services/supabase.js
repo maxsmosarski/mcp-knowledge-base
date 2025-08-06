@@ -1,13 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
-import { config } from 'dotenv';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: join(__dirname, '../../.env') });
+// Only load .env in Node.js environment (not in Cloudflare Workers)
+if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+  try {
+    const { config } = await import('dotenv');
+    config();
+  } catch (e) {
+    // dotenv not available in Workers, which is fine
+  }
+}
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;

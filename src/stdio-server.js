@@ -5,6 +5,10 @@ import { z } from 'zod';
 import { uploadDocument } from './tools/upload-document.js';
 import { uploadImage } from './tools/upload-image.js';
 import { searchChunks } from './tools/search-chunks.js';
+import { getFiles } from './tools/get-files.js';
+import { getDocument } from './tools/get-document.js';
+import { deleteDocument } from './tools/delete-document.js';
+import { deleteDocuments } from './tools/delete-documents.js';
 
 // Create MCP server instance
 const server = new McpServer({
@@ -93,6 +97,134 @@ server.tool(
   async ({ query, match_count }) => {
     try {
       const result = await searchChunks({ query, match_count });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error.message}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register the get_files tool
+server.tool(
+  'get_files',
+  'Get list of all documents in the knowledge base',
+  {},
+  async () => {
+    try {
+      const result = await getFiles({});
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error.message}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register the get_document tool
+server.tool(
+  'get_document',
+  'Get a specific document by filename or id',
+  {
+    filename: z.string().optional().describe('The filename of the document'),
+    id: z.string().optional().describe('The UUID of the document')
+  },
+  async ({ filename, id }) => {
+    try {
+      const result = await getDocument({ filename, id });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error.message}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register the delete_document tool
+server.tool(
+  'delete_document',
+  'Delete a document by filename or id',
+  {
+    filename: z.string().optional().describe('The filename to delete'),
+    id: z.string().optional().describe('The UUID to delete')
+  },
+  async ({ filename, id }) => {
+    try {
+      const result = await deleteDocument({ filename, id });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error.message}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register the delete_documents tool
+server.tool(
+  'delete_documents',
+  'Delete multiple documents by their IDs',
+  {
+    document_ids: z.array(z.string()).describe('Array of document UUIDs to delete')
+  },
+  async ({ document_ids }) => {
+    try {
+      const result = await deleteDocuments({ document_ids });
       return {
         content: [
           {

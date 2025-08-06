@@ -10,17 +10,23 @@ A Model Context Protocol (MCP) server that enables semantic search and document 
 - 🔐 Use your own API keys - no shared credentials
 - ☁️ Deploy to Cloudflare Workers or run locally
 
-## Two Implementations
+## Three Implementations
 
-This repository contains two implementations of the MCP server:
+This repository contains three implementations of the MCP server:
 
-### 1. Local/Standard MCP Server (`src/mcp-server.js`)
-- Uses the standard `@modelcontextprotocol/sdk` with StreamableHTTPServerTransport
-- Runs locally with Node.js
-- Perfect for local development and testing
+### 1. HTTP Server (`src/mcp-server.js`)
+- Uses `@modelcontextprotocol/sdk` with StreamableHTTPServerTransport
+- Runs as an HTTP server on port 3000 (configurable)
+- Perfect for API integrations and web clients
 - Can be deployed to any Node.js hosting environment
 
-### 2. Cloudflare Workers MCP Server (`src/mcp-agent.js`)
+### 2. STDIO Server (`src/stdio-server.js`)
+- Uses `@modelcontextprotocol/sdk` with StdioServerTransport
+- Communicates via standard input/output
+- Designed for Claude Desktop and CLI integrations
+- Ideal for local tool usage
+
+### 3. Cloudflare Workers (`src/mcp-agent.js`)
 - Uses Cloudflare's `agents` SDK with native Worker support
 - Designed specifically for Cloudflare Workers deployment
 - No mock objects needed - native Fetch API support
@@ -108,9 +114,9 @@ cd mcp-server
 npm install
 ```
 
-## Local Development
+## Running Locally
 
-### Option 1: MCP Server (HTTP)
+### Option 1: HTTP Server (for API access)
 
 ```bash
 # Set environment variables (optional defaults)
@@ -118,7 +124,7 @@ export SUPABASE_URL="your-supabase-url"
 export SUPABASE_SERVICE_KEY="your-supabase-key"
 export OPENAI_API_KEY="your-openai-key"
 
-# Start the server
+# Start the HTTP server
 npm start
 # Server runs on http://localhost:3000
 
@@ -126,9 +132,20 @@ npm start
 npm run dev
 ```
 
-### Option 2: STDIO Mode (for Claude Desktop)
+### Option 2: STDIO Server (for Claude Desktop)
 
-Add to your Claude Desktop configuration:
+Run directly:
+```bash
+# Set environment variables
+export SUPABASE_URL="your-supabase-url"
+export SUPABASE_SERVICE_KEY="your-supabase-key"
+export OPENAI_API_KEY="your-openai-key"
+
+# Start STDIO server
+npm run start:stdio
+```
+
+Or add to your Claude Desktop configuration:
 
 ```json
 {
@@ -232,8 +249,8 @@ mcp-server/
 ├── src/
 │   ├── mcp-server.js       # Standard MCP implementation
 │   ├── mcp-agent.js        # Cloudflare Agents SDK implementation
-│   ├── mcp-handler.js      # Legacy Worker handler (deprecated)
-│   ├── server-definition.js # Shared server definition
+│   ├── stdio-server.js     # STDIO transport implementation
+│   ├── index.js            # REST API wrapper
 │   ├── tools/              # Tool implementations
 │   │   ├── upload-document.js
 │   │   ├── upload-image.js
@@ -245,9 +262,10 @@ mcp-server/
 │   └── services/           # Service implementations
 │       ├── supabase.js
 │       └── openai.js
-├── wrangler.toml           # Cloudflare config for legacy handler
 ├── wrangler-agents.toml    # Cloudflare config for Agents SDK
 ├── package.json
+├── start-mcp.js            # MCP server starter
+├── start-stdio.js          # STDIO server starter
 └── README.md
 ```
 
@@ -294,19 +312,19 @@ npm run db:debug  # Debug database state
 
 ## Migration Guide
 
-### From Legacy Handler to Agents SDK
+### Cloudflare Workers Deployment
 
-The new Agents SDK implementation (`mcp-agent.js`) is the recommended approach for Cloudflare Workers:
+The Agents SDK implementation (`mcp-agent.js`) is the recommended approach for Cloudflare Workers:
 
 1. Uses native Worker APIs without mock objects
 2. Better performance and compatibility
 3. Cleaner code structure extending `McpAgent`
 4. Supports both SSE and streamable HTTP transports
 
-To migrate:
-1. Update your `wrangler.toml` to point to `src/mcp-agent.js`
-2. Or use the provided `wrangler-agents.toml` configuration
-3. Deploy using `npm run deploy:agents`
+To deploy:
+1. Use the provided `wrangler-agents.toml` configuration
+2. Deploy using `npm run deploy:agents`
+3. Or use `wrangler deploy --config wrangler-agents.toml`
 
 ## License
 

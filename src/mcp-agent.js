@@ -32,11 +32,11 @@ export class KnowledgeBaseMCP extends McpAgent {
    * Called when the agent starts
    */
   async init() {
-    // Get credentials from environment or headers
+    // Get credentials from request headers (passed via this.props)
     const getCredentials = () => ({
-      supabaseUrl: this.env?.SUPABASE_URL || process.env.SUPABASE_URL,
-      supabaseKey: this.env?.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_KEY,
-      openaiKey: this.env?.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
+      supabaseUrl: this.props?.supabaseUrl,
+      supabaseKey: this.props?.supabaseKey,
+      openaiKey: this.props?.openaiKey,
     });
 
     // Register upload_document tool
@@ -244,6 +244,9 @@ export class KnowledgeBaseMCP extends McpAgent {
   }
 }
 
+// Export the Durable Object class for Cloudflare
+export { KnowledgeBaseMCP };
+
 // Export the default Worker handler
 export default {
   /**
@@ -253,8 +256,15 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // Store environment for use in tools
-    KnowledgeBaseMCP.prototype.env = env;
+    // Extract credentials from headers for this request
+    const credentials = {
+      supabaseUrl: request.headers.get('x-supabase-url'),
+      supabaseKey: request.headers.get('x-supabase-key'),
+      openaiKey: request.headers.get('x-openai-key')
+    };
+    
+    // Store credentials in context for the Durable Object
+    ctx.props = credentials;
     
     // Health check endpoint
     if (url.pathname === '/') {

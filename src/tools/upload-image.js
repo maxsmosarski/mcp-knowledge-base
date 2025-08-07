@@ -48,38 +48,42 @@ async function uploadImageToStorage(fileData, originalFileName, supabaseClient, 
 
 export async function uploadImage({ file_path, file_data, original_filename, credentials = null }) {
   try {
-    const isWorker = typeof globalThis.ReadableStream !== 'undefined' && !globalThis.process;
-    console.log(`[uploadImage] Starting upload - Worker environment: ${isWorker}`);
+    // Better detection: if file_data is provided, we're in Worker mode
+    // This is more reliable than checking global environment
+    const isWorker = !!file_data;
+    console.log(`[uploadImage] Starting upload - Using file_data: ${isWorker}`);
     console.log(`[uploadImage] Inputs - file_path: ${file_path}, file_data: ${file_data ? 'provided' : 'not provided'}, original_filename: ${original_filename}`);
 
-    // Validate input based on environment
-    if (isWorker) {
-      // In Workers, we need file_data and original_filename
-      if (!file_data) {
-        throw new Error('file_data is required in Cloudflare Workers environment');
-      }
+    // Validate input based on what's provided
+    if (file_data) {
+      // Using file_data (Worker mode)
       if (!original_filename) {
-        throw new Error('original_filename is required in Cloudflare Workers environment');
+        throw new Error('original_filename is required when using file_data');
       }
+      console.log('[uploadImage] Using file_data mode (Cloudflare Workers)');
+    } else if (file_path) {
+      // Using file_path (Node.js mode)
+      if (!fs) {
+        throw new Error('File system not available - use file_data parameter instead of file_path in Cloudflare Workers');
+      }
+      console.log('[uploadImage] Using file_path mode (Node.js)');
     } else {
-      // In Node.js, we need file_path
-      if (!file_path) {
-        throw new Error('file_path is required');
-      }
+      // Neither provided
+      throw new Error('Either file_data or file_path must be provided');
+    }
       
-      // Check if file exists
-      if (!fs.existsSync(file_path)) {
+      // Check if file exists (only in Node.js mode)
+      if (file_path && fs && !fs.existsSync(file_path)) {
         throw new Error(`File not found: ${file_path}`);
       }
 
-      // Check if file is a supported image type
-      if (!storage.isImageFile(file_path)) {
+      // Check if file is a supported image type (only in Node.js mode)
+      if (file_path && !storage.isImageFile(file_path)) {
         throw new Error('File must be a supported image type (.png, .jpg, .jpeg, .gif, .webp)');
       }
-    }
 
     // Determine filename
-    const fileName = original_filename || (path ? path.basename(file_path) : 'uploaded-image.jpg');
+    const fileName = original_filename || (file_path && path ? path.basename(file_path) : 'uploaded-image.jpg');
     console.log(`[uploadImage] Processing image: ${fileName}`);
 
     // Use provided credentials or fall back to default client
@@ -91,13 +95,15 @@ export async function uploadImage({ file_path, file_data, original_filename, cre
     // Step 1: Upload to Supabase Storage
     console.log('[uploadImage] Uploading to Supabase Storage...');
     let uploadResult;
-    if (isWorker) {
-      // In Workers, use the provided file data
+    if (file_data) {
+      // Use the provided file data (Worker mode)
       uploadResult = await uploadImageToStorage(file_data, fileName, supabaseClient, true);
-    } else {
-      // In Node.js, read the file
+    } else if (file_path && fs) {
+      // Read the file from disk (Node.js mode)
       const fileBuffer = fs.readFileSync(file_path);
       uploadResult = await uploadImageToStorage(fileBuffer, fileName, supabaseClient, false);
+    } else {
+      throw new Error('Unable to access file data');
     }
     const { publicUrl, path: storagePath } = uploadResult;
 
@@ -108,20 +114,28 @@ export async function uploadImage({ file_path, file_data, original_filename, cre
 
     // Step 3: Get image metadata
     let metadata;
-    if (isWorker) {
-      // In Workers, we can't get file stats, use what we have
+    if (file_data) {
+      // Using file_data, we can't get file stats, use what we have
       metadata = {
         file_size: file_data?.size || file_data?.length || 0,
         mime_type: storage.getMimeType(fileName.includes('.') ? '.' + fileName.split('.').pop() : '.jpg'),
         storage_path: storagePath,
         uploaded_at: new Date().toISOString()
       };
-    } else {
+    } else if (file_path && fs) {
       // In Node.js, get file stats
       const stats = fs.statSync(file_path);
       metadata = {
         file_size: stats.size,
         mime_type: storage.getMimeType(path.extname(file_path)),
+        storage_path: storagePath,
+        uploaded_at: new Date().toISOString()
+      };
+    } else {
+      // Fallback metadata
+      metadata = {
+        file_size: 0,
+        mime_type: 'application/octet-stream',
         storage_path: storagePath,
         uploaded_at: new Date().toISOString()
       };

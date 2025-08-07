@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+openai-agents[all]
+python-multipart
+cors

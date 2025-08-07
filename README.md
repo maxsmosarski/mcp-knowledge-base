@@ -14,6 +14,48 @@ A Model Context Protocol (MCP) server that enables semantic search and document 
 - 🌍 Edge computing with Durable Objects
 - 👥 Multi-tenant support via request headers
 
+## Example Applications
+
+This repository includes two complete example applications that demonstrate how to build on top of the MCP server:
+
+### 1. Middle Layer (`applications/middle-layer/`)
+A Python FastAPI server that bridges the MCP server with OpenAI's Agents SDK:
+- Provides a conversational AI interface with memory
+- Manages conversation sessions and history
+- Integrates with OpenAI Agents for advanced reasoning
+- Handles file uploads and document processing
+- See [applications/middle-layer/README.md](applications/middle-layer/README.md) for setup
+
+### 2. Web Application (`applications/web-app/`)
+A modern React frontend for the knowledge base system:
+- Clean, responsive chat interface
+- Document management sidebar
+- File upload with drag-and-drop support
+- Real-time conversation streaming
+- Image preview and management
+- See [applications/web-app/README.md](applications/web-app/README.md) for setup
+
+### Quick Start with Example Apps
+
+```bash
+# 1. Set up the MCP server (see Quick Start above)
+
+# 2. Set up the middle layer
+cd applications/middle-layer
+cp .env.example .env  # Edit with your API keys
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python server.py
+
+# 3. Set up the web app
+cd ../web-app
+npm install
+npm run dev  # Opens at http://localhost:5173
+```
+
+For detailed setup instructions, see the README files in each application folder.
+
 ## Quick Start
 
 ```bash

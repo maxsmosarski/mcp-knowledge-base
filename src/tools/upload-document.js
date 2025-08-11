@@ -23,52 +23,57 @@ function chunkText(text, maxWords = 500) {
 // PDFs will still be processed for text content
 
 async function processPDF(filePath) {
-  // Use pdfjs-dist which doesn't have initialization issues
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const { getDocument } = pdfjsLib;
-  
-  // Read PDF file
-  const data = new Uint8Array(await fs.readFile(filePath));
-  
-  // Load the PDF document
-  const loadingTask = getDocument({ data });
-  const pdfDoc = await loadingTask.promise;
-  
-  // Extract text from all pages
-  let fullText = '';
-  const numPages = pdfDoc.numPages;
-  
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    const page = await pdfDoc.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items.map(item => item.str).join(' ');
-    fullText += pageText + '\n';
+  try {
+    // Read PDF file
+    const pdfBytes = await fs.readFile(filePath);
+    
+    // Load the PDF document using pdf-lib (more compatible with Workers)
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    
+    // Get basic metadata
+    const numPages = pdfDoc.getPageCount();
+    const metadata = {
+      pages: numPages,
+      info: {
+        Title: pdfDoc.getTitle() || '',
+        Author: pdfDoc.getAuthor() || '',
+        Subject: pdfDoc.getSubject() || '',
+        Creator: pdfDoc.getCreator() || '',
+        Producer: pdfDoc.getProducer() || '',
+        CreationDate: pdfDoc.getCreationDate()?.toISOString() || '',
+        ModificationDate: pdfDoc.getModificationDate()?.toISOString() || ''
+      },
+      version: '1.0'
+    };
+    
+    // Note: pdf-lib doesn't have built-in text extraction
+    // For now, we'll create a placeholder with metadata
+    // In production, you might want to use a separate service for text extraction
+    let fullText = `PDF Document: ${metadata.info.Title || path.basename(filePath)}\n`;
+    fullText += `Author: ${metadata.info.Author || 'Unknown'}\n`;
+    fullText += `Pages: ${numPages}\n`;
+    fullText += `Subject: ${metadata.info.Subject || 'N/A'}\n\n`;
+    fullText += `Note: Full text extraction from PDFs is limited in Cloudflare Workers environment. `;
+    fullText += `This document has been indexed with its metadata for searchability.`;
+    
+    // Clean up the text to handle any Unicode issues
+    fullText = fullText
+      .replace(/\0/g, '') // Remove null bytes
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters except \t, \n, \r
+      .trim();
+    
+    return {
+      text: fullText,
+      metadata: metadata
+    };
+  } catch (error) {
+    console.error('Error processing PDF with pdf-lib:', error);
+    // Fallback to basic metadata if PDF processing fails
+    return {
+      text: `PDF Document: ${path.basename(filePath)}\nNote: Unable to extract content from this PDF.`,
+      metadata: { pages: 0, info: {}, version: '1.0' }
+    };
   }
-  
-  // Get metadata
-  const metadata = {
-    pages: numPages,
-    info: await pdfDoc.getMetadata().then(data => data.info).catch(() => ({})),
-    version: '1.0'
-  };
-  
-  // Clean up the text to handle Unicode issues
-  fullText = fullText
-    .replace(/\0/g, '') // Remove null bytes
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters except \t, \n, \r
-    .replace(/\\u[\dA-F]{4}/gi, (match) => { // Handle Unicode escape sequences
-      try {
-        return String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16));
-      } catch {
-        return ''; // Remove invalid sequences
-      }
-    })
-    .trim();
-  
-  return {
-    text: fullText,
-    metadata: metadata
-  };
 }
 
 export async function uploadDocument({ file_path, credentials = null }) {

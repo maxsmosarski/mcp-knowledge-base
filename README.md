@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server that enables semantic search and document management using your own Supabase and OpenAI accounts.
 
-**Live Demo**: `https://mcp-supabase.max-smosarski.workers.dev`
+**Live Demo**: `https://mcp-supabase.maxsmosarski.me/mcp`
 
 ## Features
 

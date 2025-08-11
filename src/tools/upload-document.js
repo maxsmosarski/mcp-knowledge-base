@@ -1,5 +1,14 @@
-import fs from 'fs/promises';
-import path from 'path';
+// Conditionally import Node.js modules only when not in Workers environment
+let fs, path;
+if (typeof globalThis.ReadableStream !== 'undefined' && !globalThis.process) {
+  // We're in a Cloudflare Worker environment
+  console.log('[upload-document] Running in Cloudflare Workers environment');
+} else {
+  // We're in Node.js environment
+  fs = (await import('fs/promises')).default;
+  path = (await import('path')).default;
+}
+
 import { PDFDocument } from 'pdf-lib';
 import { supabase, createSupabaseClient } from '../services/supabase.js';
 import { generateEmbedding } from '../services/openai.js';
@@ -22,10 +31,21 @@ function chunkText(text, maxWords = 500) {
 // Image extraction from PDFs has been removed for Cloudflare Workers compatibility
 // PDFs will still be processed for text content
 
-async function processPDF(filePath) {
+async function processPDF(filePath, fileData, fileName) {
   try {
-    // Read PDF file
-    const pdfBytes = await fs.readFile(filePath);
+    let pdfBytes;
+    
+    if (fileData) {
+      // Use provided file data (Cloudflare Workers mode)
+      pdfBytes = fileData;
+      console.log('[processPDF] Using file data mode for:', fileName);
+    } else if (filePath && fs) {
+      // Read PDF file from disk (Node.js mode)
+      pdfBytes = await fs.readFile(filePath);
+      console.log('[processPDF] Using file path mode for:', filePath);
+    } else {
+      throw new Error('Either fileData or filePath must be provided');
+    }
     
     // Load the PDF document using pdf-lib (more compatible with Workers)
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
@@ -49,7 +69,8 @@ async function processPDF(filePath) {
     // Note: pdf-lib doesn't have built-in text extraction
     // For now, we'll create a placeholder with metadata
     // In production, you might want to use a separate service for text extraction
-    let fullText = `PDF Document: ${metadata.info.Title || path.basename(filePath)}\n`;
+    const displayName = fileName || (filePath && path ? path.basename(filePath) : 'document.pdf');
+    let fullText = `PDF Document: ${metadata.info.Title || displayName}\n`;
     fullText += `Author: ${metadata.info.Author || 'Unknown'}\n`;
     fullText += `Pages: ${numPages}\n`;
     fullText += `Subject: ${metadata.info.Subject || 'N/A'}\n\n`;
@@ -69,17 +90,39 @@ async function processPDF(filePath) {
   } catch (error) {
     console.error('Error processing PDF with pdf-lib:', error);
     // Fallback to basic metadata if PDF processing fails
+    const displayName = fileName || (filePath && path ? path.basename(filePath) : 'document.pdf');
     return {
-      text: `PDF Document: ${path.basename(filePath)}\nNote: Unable to extract content from this PDF.`,
+      text: `PDF Document: ${displayName}\nNote: Unable to extract content from this PDF.`,
       metadata: { pages: 0, info: {}, version: '1.0' }
     };
   }
 }
 
-export async function uploadDocument({ file_path, credentials = null }) {
+export async function uploadDocument({ file_path, file_data, original_filename, credentials = null }) {
   try {
-    const filename = path.basename(file_path);
-    const fileExt = path.extname(filename).toLowerCase();
+    // Detect if we're in Worker mode
+    const isWorker = !!file_data;
+    console.log(`[uploadDocument] Starting upload - Using file_data: ${isWorker}`);
+    console.log(`[uploadDocument] Inputs - file_path: ${file_path}, file_data: ${file_data ? 'provided' : 'not provided'}, original_filename: ${original_filename}`);
+    
+    // Validate input
+    if (file_data) {
+      if (!original_filename) {
+        throw new Error('original_filename is required when using file_data');
+      }
+      console.log('[uploadDocument] Using file_data mode (Cloudflare Workers)');
+    } else if (file_path) {
+      if (!fs) {
+        throw new Error('File system not available - use file_data parameter instead of file_path in Cloudflare Workers');
+      }
+      console.log('[uploadDocument] Using file_path mode (Node.js)');
+    } else {
+      throw new Error('Either file_data or file_path must be provided');
+    }
+    
+    // Determine filename
+    const filename = original_filename || (file_path && path ? path.basename(file_path) : 'document.pdf');
+    const fileExt = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')).toLowerCase() : '.pdf';
     
     let content = '';
     let metadata = {};
@@ -89,7 +132,7 @@ export async function uploadDocument({ file_path, credentials = null }) {
     if (fileExt === '.pdf') {
       console.log('Processing PDF file...');
       try {
-        const pdfResult = await processPDF(file_path);
+        const pdfResult = await processPDF(file_path, file_data, filename);
         content = pdfResult.text;
         metadata = pdfResult.metadata;
         documentType = 'pdf';
@@ -98,8 +141,16 @@ export async function uploadDocument({ file_path, credentials = null }) {
         throw new Error(`Failed to parse PDF: ${pdfError.message}`);
       }
     } else {
-      // Handle text files as before
-      content = await fs.readFile(file_path, 'utf-8');
+      // Handle text files
+      if (file_data) {
+        // Convert Uint8Array to string for text files in Workers
+        const decoder = new TextDecoder('utf-8');
+        content = decoder.decode(file_data);
+      } else if (file_path && fs) {
+        content = await fs.readFile(file_path, 'utf-8');
+      } else {
+        throw new Error('Unable to read file content');
+      }
     }
     
     // Ensure content is not empty

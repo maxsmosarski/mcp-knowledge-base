@@ -39,15 +39,71 @@ export class KnowledgeBaseMCP extends McpAgent {
       openaiKey: this.props?.openaiKey,
     });
 
-    // Register upload_document tool
+    // Register upload_document tool  
     this.server.tool(
       'upload_document',
       'Upload a document to the knowledge base',
-      { file_path: z.string().describe('Path to the file to upload') },
-      async ({ file_path }) => {
+      {
+        file_path: z.string().optional().describe('Path to the file (for compatibility, will fail in Workers)'),
+        file_base64: z.string().optional().describe('Base64-encoded document data (required for Cloudflare Workers)'),
+        original_filename: z.string().describe('Original filename with extension')
+      },
+      async ({ file_path, file_base64, original_filename }) => {
         try {
+          console.log('[mcp-agent] upload_document called with:', {
+            has_file_path: !!file_path,
+            has_file_base64: !!file_base64,
+            original_filename
+          });
+          
           const credentials = getCredentials();
-          const result = await uploadDocument({ file_path, credentials });
+          
+          // Check if we're in Cloudflare Workers (no file system access)
+          if (file_path && !file_base64) {
+            // This won't work in Cloudflare Workers
+            console.error('[mcp-agent] file_path provided but no file_base64 - this will fail in Cloudflare Workers');
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  success: false,
+                  error: 'File system access not available in Cloudflare Workers. Use file_base64 instead of file_path.'
+                }, null, 2)
+              }],
+              isError: true
+            };
+          }
+          
+          if (!file_base64) {
+            throw new Error('file_base64 is required for document upload in Cloudflare Workers');
+          }
+          
+          // Convert base64 to Uint8Array
+          console.log('[mcp-agent] Converting base64 to Uint8Array...');
+          let bytes;
+          try {
+            // Remove data URL prefix if present
+            const base64Data = file_base64.includes(',') 
+              ? file_base64.split(',')[1] 
+              : file_base64;
+            
+            const binaryString = atob(base64Data);
+            bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            console.log(`[mcp-agent] Converted to ${bytes.length} bytes`);
+          } catch (e) {
+            console.error('[mcp-agent] Base64 conversion error:', e);
+            throw new Error(`Failed to decode base64 data: ${e.message}`);
+          }
+          
+          const result = await uploadDocument({ 
+            file_data: bytes, 
+            original_filename, 
+            credentials 
+          });
+          
           return {
             content: [{
               type: 'text',

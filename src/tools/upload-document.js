@@ -10,10 +10,9 @@ if (typeof globalThis.ReadableStream !== 'undefined' && !globalThis.process) {
 }
 
 import { PDFDocument } from 'pdf-lib';
-import { extractText, getMetadata } from 'unpdf';
+import { extractText, getMeta } from 'unpdf';
 import { supabase, createSupabaseClient } from '../services/supabase.js';
 import { generateEmbedding } from '../services/openai.js';
-import { uploadImage } from './upload-image.js';
 
 function chunkText(text, maxWords = 500) {
   const words = text.split(/\s+/);
@@ -62,18 +61,18 @@ async function processPDF(filePath, fileData, fileName) {
       fullText = text || '';
       
       // Get metadata
-      const pdfMetadata = await getMetadata(buffer);
+      const pdfMetadata = await getMeta(buffer);
       
       metadata = {
-        pages: totalPages || 0,
+        pages: totalPages || pdfMetadata?.pages || 0,
         info: {
-          Title: pdfMetadata?.title || '',
-          Author: pdfMetadata?.author || '',
-          Subject: pdfMetadata?.subject || '',
-          Creator: pdfMetadata?.creator || '',
-          Producer: pdfMetadata?.producer || '',
-          CreationDate: pdfMetadata?.creationDate || '',
-          ModificationDate: pdfMetadata?.modificationDate || ''
+          Title: pdfMetadata?.info?.Title || pdfMetadata?.title || '',
+          Author: pdfMetadata?.info?.Author || pdfMetadata?.author || '',
+          Subject: pdfMetadata?.info?.Subject || pdfMetadata?.subject || '',
+          Creator: pdfMetadata?.info?.Creator || pdfMetadata?.creator || '',
+          Producer: pdfMetadata?.info?.Producer || pdfMetadata?.producer || '',
+          CreationDate: pdfMetadata?.info?.CreationDate || pdfMetadata?.creationDate || '',
+          ModificationDate: pdfMetadata?.info?.ModificationDate || pdfMetadata?.modificationDate || ''
         },
         version: '1.0'
       };

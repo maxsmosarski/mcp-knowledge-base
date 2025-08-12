@@ -10,6 +10,7 @@ if (typeof globalThis.ReadableStream !== 'undefined' && !globalThis.process) {
 }
 
 import { PDFDocument } from 'pdf-lib';
+import { extractText, getMetadata } from 'unpdf';
 import { supabase, createSupabaseClient } from '../services/supabase.js';
 import { generateEmbedding } from '../services/openai.js';
 import { uploadImage } from './upload-image.js';
@@ -47,35 +48,81 @@ async function processPDF(filePath, fileData, fileName) {
       throw new Error('Either fileData or filePath must be provided');
     }
     
-    // Load the PDF document using pdf-lib (more compatible with Workers)
-    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    // Try to extract text using unpdf (Works in Cloudflare Workers)
+    let fullText = '';
+    let metadata = {};
     
-    // Get basic metadata
-    const numPages = pdfDoc.getPageCount();
-    const metadata = {
-      pages: numPages,
-      info: {
-        Title: pdfDoc.getTitle() || '',
-        Author: pdfDoc.getAuthor() || '',
-        Subject: pdfDoc.getSubject() || '',
-        Creator: pdfDoc.getCreator() || '',
-        Producer: pdfDoc.getProducer() || '',
-        CreationDate: pdfDoc.getCreationDate()?.toISOString() || '',
-        ModificationDate: pdfDoc.getModificationDate()?.toISOString() || ''
-      },
-      version: '1.0'
-    };
-    
-    // Note: pdf-lib doesn't have built-in text extraction
-    // For now, we'll create a placeholder with metadata
-    // In production, you might want to use a separate service for text extraction
-    const displayName = fileName || (filePath && path ? path.basename(filePath) : 'document.pdf');
-    let fullText = `PDF Document: ${metadata.info.Title || displayName}\n`;
-    fullText += `Author: ${metadata.info.Author || 'Unknown'}\n`;
-    fullText += `Pages: ${numPages}\n`;
-    fullText += `Subject: ${metadata.info.Subject || 'N/A'}\n\n`;
-    fullText += `Note: Full text extraction from PDFs is limited in Cloudflare Workers environment. `;
-    fullText += `This document has been indexed with its metadata for searchability.`;
+    try {
+      console.log('[processPDF] Extracting text with unpdf...');
+      // Convert Uint8Array to ArrayBuffer if needed
+      const buffer = pdfBytes instanceof ArrayBuffer ? pdfBytes : pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
+      
+      // Extract text from PDF
+      const { text, totalPages } = await extractText(buffer);
+      fullText = text || '';
+      
+      // Get metadata
+      const pdfMetadata = await getMetadata(buffer);
+      
+      metadata = {
+        pages: totalPages || 0,
+        info: {
+          Title: pdfMetadata?.title || '',
+          Author: pdfMetadata?.author || '',
+          Subject: pdfMetadata?.subject || '',
+          Creator: pdfMetadata?.creator || '',
+          Producer: pdfMetadata?.producer || '',
+          CreationDate: pdfMetadata?.creationDate || '',
+          ModificationDate: pdfMetadata?.modificationDate || ''
+        },
+        version: '1.0'
+      };
+      
+      console.log(`[processPDF] Extracted ${fullText.length} characters of text from ${totalPages} pages`);
+      
+      // If no text was extracted, add a note
+      if (!fullText || fullText.trim().length === 0) {
+        const displayName = fileName || (filePath && path ? path.basename(filePath) : 'document.pdf');
+        fullText = `PDF Document: ${metadata.info.Title || displayName}\n`;
+        fullText += `Author: ${metadata.info.Author || 'Unknown'}\n`;
+        fullText += `Pages: ${metadata.pages}\n`;
+        fullText += `Subject: ${metadata.info.Subject || 'N/A'}\n\n`;
+        fullText += `Note: This PDF appears to contain images or scanned content without extractable text.`;
+      }
+      
+    } catch (unpdfError) {
+      console.error('[processPDF] unpdf extraction failed, falling back to pdf-lib:', unpdfError);
+      
+      // Fallback to pdf-lib for metadata only
+      try {
+        const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+        const numPages = pdfDoc.getPageCount();
+        
+        metadata = {
+          pages: numPages,
+          info: {
+            Title: pdfDoc.getTitle() || '',
+            Author: pdfDoc.getAuthor() || '',
+            Subject: pdfDoc.getSubject() || '',
+            Creator: pdfDoc.getCreator() || '',
+            Producer: pdfDoc.getProducer() || '',
+            CreationDate: pdfDoc.getCreationDate()?.toISOString() || '',
+            ModificationDate: pdfDoc.getModificationDate()?.toISOString() || ''
+          },
+          version: '1.0'
+        };
+        
+        const displayName = fileName || (filePath && path ? path.basename(filePath) : 'document.pdf');
+        fullText = `PDF Document: ${metadata.info.Title || displayName}\n`;
+        fullText += `Author: ${metadata.info.Author || 'Unknown'}\n`;
+        fullText += `Pages: ${numPages}\n`;
+        fullText += `Subject: ${metadata.info.Subject || 'N/A'}\n\n`;
+        fullText += `Note: Text extraction failed. Document indexed with metadata only.`;
+      } catch (pdfLibError) {
+        console.error('[processPDF] pdf-lib also failed:', pdfLibError);
+        throw pdfLibError;
+      }
+    }
     
     // Clean up the text to handle any Unicode issues
     fullText = fullText
@@ -88,7 +135,7 @@ async function processPDF(filePath, fileData, fileName) {
       metadata: metadata
     };
   } catch (error) {
-    console.error('Error processing PDF with pdf-lib:', error);
+    console.error('Error processing PDF:', error);
     // Fallback to basic metadata if PDF processing fails
     const displayName = fileName || (filePath && path ? path.basename(filePath) : 'document.pdf');
     return {

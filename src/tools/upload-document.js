@@ -3,21 +3,18 @@
 // Detect if we're in a Cloudflare Worker environment
 const isWorker = typeof globalThis.ReadableStream !== 'undefined' && !globalThis.process;
 
-// Dynamically import the correct implementation
-let uploadDocument;
-
-if (isWorker) {
-  console.log('[upload-document] Using Cloudflare Worker implementation (metadata only)');
-  const workerModule = await import('./upload-document-worker.js');
-  uploadDocument = workerModule.uploadDocument;
-} else {
-  console.log('[upload-document] Using Node.js implementation (full text extraction)');
-  const nodeModule = await import('./upload-document-node.js');
-  uploadDocument = nodeModule.uploadDocument;
+// Create a lazy-loaded upload function
+export async function uploadDocument(params) {
+  if (isWorker) {
+    console.log('[upload-document] Using Cloudflare Worker implementation (metadata only)');
+    const workerModule = await import('./upload-document-worker.js');
+    return workerModule.uploadDocument(params);
+  } else {
+    console.log('[upload-document] Using Node.js implementation (full text extraction)');
+    const nodeModule = await import('./upload-document-node.js');
+    return nodeModule.uploadDocument(params);
+  }
 }
-
-// Export the appropriate implementation
-export { uploadDocument };
 
 // For MCP tool registration
 export const uploadDocumentTool = {

@@ -8,7 +8,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 // Import our tool implementations
-import { uploadDocument } from './tools/upload-document.js';
+// Use Cloudflare-specific version to avoid Node.js dependencies
+import { uploadDocument } from './tools/upload-document-cf.js';
 import { uploadImage } from './tools/upload-image.js';
 import { searchChunks } from './tools/search-chunks.js';
 import { getFiles } from './tools/get-files.js';

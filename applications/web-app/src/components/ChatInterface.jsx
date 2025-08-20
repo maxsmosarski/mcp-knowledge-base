@@ -212,6 +212,44 @@ const ChatInterface = () => {
 
 // Component to parse and render message content with markdown support
 const MessageContent = ({ content, onImageClick }) => {
+  // Helper function to parse markdown formatting (bold and code)
+  const parseMarkdownText = (text, key) => {
+    if (!text) return null;
+    
+    // Combined regex to match bold (**text**), inline code (`code`), or regular text
+    const formattingRegex = /(\*\*([^*]+)\*\*)|(`([^`]+)`)|([^*`]+)/g;
+    const elements = [];
+    let match;
+    let elementIndex = 0;
+    
+    while ((match = formattingRegex.exec(text)) !== null) {
+      if (match[1]) {
+        // Bold text
+        elements.push(
+          <strong key={`${key}-${elementIndex++}`} className="font-semibold">
+            {match[2]}
+          </strong>
+        );
+      } else if (match[3]) {
+        // Inline code
+        elements.push(
+          <code key={`${key}-${elementIndex++}`} className="px-1 py-0.5 bg-gray-100 rounded text-sm font-mono">
+            {match[4]}
+          </code>
+        );
+      } else if (match[5]) {
+        // Regular text
+        elements.push(
+          <span key={`${key}-${elementIndex++}`}>
+            {match[5]}
+          </span>
+        );
+      }
+    }
+    
+    return elements;
+  };
+  
   // Parse markdown images and make them clickable
   const renderContent = () => {
     // Split by markdown image pattern ![alt](url)
@@ -228,12 +266,24 @@ const MessageContent = ({ content, onImageClick }) => {
             key={index}
             src={imageUrl}
             alt={altText}
-            className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+            className="rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity shadow-md"
+            style={{ maxWidth: '300px', maxHeight: '400px', objectFit: 'contain' }}
             onClick={() => onImageClick({ url: imageUrl, filename: altText })}
           />
         );
       } else if (index % 4 === 0) { // This is regular text
-        return <span key={index}>{part}</span>;
+        // Split by newlines to preserve formatting
+        const lines = part.split('\n');
+        return (
+          <span key={index}>
+            {lines.map((line, lineIndex) => (
+              <React.Fragment key={`${index}-line-${lineIndex}`}>
+                {parseMarkdownText(line, `${index}-${lineIndex}`)}
+                {lineIndex < lines.length - 1 && <br />}
+              </React.Fragment>
+            ))}
+          </span>
+        );
       }
       return null; // Skip the alt text and URL parts as they're handled above
     });

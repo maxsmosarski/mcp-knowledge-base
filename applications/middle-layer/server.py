@@ -73,8 +73,8 @@ async def create_agent():
     params: MCPServerStreamableHttpParams = {
         "url": mcp_url,
         "terminate_on_close": True,
-        "timeout": 30,
-        "sse_read_timeout": 30,
+        "timeout": 120,  # Increased from 30 to 120 seconds for file uploads
+        "sse_read_timeout": 120,  # Increased from 30 to 120 seconds
         "headers": {
             "Accept": "application/json, text/event-stream",
             "x-supabase-url": os.getenv('SUPABASE_URL'),
@@ -85,7 +85,7 @@ async def create_agent():
     
     mcp_server = MCPServerStreamableHttp(
         params=params,
-        client_session_timeout_seconds=30
+        client_session_timeout_seconds=120  # Increased from 30 to 120 seconds
     )
     
     # Load system prompt from file
@@ -110,8 +110,8 @@ async def create_files_agent():
     params: MCPServerStreamableHttpParams = {
         "url": mcp_url,
         "terminate_on_close": True,
-        "timeout": 30,
-        "sse_read_timeout": 30,
+        "timeout": 120,  # Increased from 30 to 120 seconds
+        "sse_read_timeout": 120,  # Increased from 30 to 120 seconds
         "headers": {
             "Accept": "application/json, text/event-stream",
             "x-supabase-url": os.getenv('SUPABASE_URL'),
@@ -121,7 +121,7 @@ async def create_files_agent():
     }
     mcp_server = MCPServerStreamableHttp(
         params=params,
-        client_session_timeout_seconds=30
+        client_session_timeout_seconds=120  # Increased from 30 to 120 seconds
     )
     
     files_agent = Agent(
@@ -245,7 +245,6 @@ async def upload_file(file: UploadFile = File(...)):
     
     agent = None
     mcp_server = None
-    temp_path = None
     
     try:
         # Create a fresh agent and MCP connection for this request
@@ -277,17 +276,77 @@ async def upload_file(file: UploadFile = File(...)):
             )
             
         else:
-            # For documents, save to temp file and call tool
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-                temp_file.write(file_content)
-                temp_path = temp_file.name
-            
+            # For documents - check if we're using local MCP server or Cloudflare Worker
             logger.info(f"Processing document upload: {file.filename}")
-            logger.info("Calling upload_document tool directly through MCP server...")
-            result = await mcp_server.call_tool(
-                "upload_document",
-                {"file_path": temp_path}
-            )
+            
+            # Check file size
+            file_size_mb = len(file_content) / (1024 * 1024)
+            logger.info(f"File size: {file_size_mb:.2f} MB ({len(file_content)} bytes)")
+            
+            if file_size_mb > 10:  # Limit to 10MB for now
+                raise HTTPException(status_code=413, detail=f"File too large: {file_size_mb:.2f} MB. Maximum size is 10 MB.")
+            
+            # Check if we're connecting to local MCP server or Cloudflare Worker
+            mcp_url = os.getenv('MCP_SERVER_URL', 'http://localhost:3000/mcp')
+            is_local = 'localhost' in mcp_url or '127.0.0.1' in mcp_url
+            
+            if is_local:
+                # Local MCP server - save to temp file and use file_path
+                logger.info(f"Using local MCP server - saving to temp file for full text extraction")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+                    temp_file.write(file_content)
+                    temp_path = temp_file.name
+                
+                logger.info(f"Saved to temp file: {temp_path}")
+                logger.info("Calling upload_document tool with file_path...")
+                try:
+                    result = await mcp_server.call_tool(
+                        "upload_document",
+                        {"file_path": temp_path}
+                    )
+                    # Clean up temp file after successful upload
+                    try:
+                        os.unlink(temp_path)
+                        logger.info(f"Cleaned up temp file: {temp_path}")
+                    except:
+                        pass
+                except Exception as e:
+                    # Clean up temp file on error
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                    logger.error(f"Error calling upload_document tool: {e}")
+                    raise
+            else:
+                # Cloudflare Worker - check size limits for base64 encoding
+                if file_size_mb > 2:
+                    logger.info(f"Large file detected ({file_size_mb:.2f} MB) for Cloudflare Worker")
+                    raise HTTPException(
+                        status_code=413, 
+                        detail=f"Files larger than 2MB are not supported via Cloudflare Worker due to request size limits. Your file is {file_size_mb:.2f} MB. Please use the local MCP server for larger files."
+                    )
+                
+                # Small file for Cloudflare Worker, use base64 encoding
+                file_base64 = base64.b64encode(file_content).decode('utf-8')
+                base64_size_mb = len(file_base64) / (1024 * 1024)
+                logger.info(f"Converted to base64: {base64_size_mb:.2f} MB for Cloudflare Worker")
+                
+                logger.info("Calling upload_document tool with base64 data...")
+                try:
+                    result = await mcp_server.call_tool(
+                        "upload_document",
+                        {
+                            "file_base64": file_base64,
+                            "original_filename": file.filename
+                        }
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Timeout during document upload")
+                    raise HTTPException(status_code=504, detail="Upload timed out. Please try a smaller file.")
+                except Exception as e:
+                    logger.error(f"Error calling upload_document tool: {e}")
+                    raise
         
         logger.info(f"Tool call result: {result}")
         
@@ -390,14 +449,6 @@ async def upload_file(file: UploadFile = File(...)):
                 logger.info("MCP server cleanup completed for upload request")
             except Exception as e:
                 logger.warning(f"MCP server cleanup failed: {e}")
-        
-        # Clean up temp file if it was created
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-                logger.info(f"Cleaned up temp file: {temp_path}")
-            except Exception as e:
-                logger.warning(f"Failed to delete temp file: {e}")
 
 class DeleteRequest(BaseModel):
     document_ids: Optional[List[str]] = None

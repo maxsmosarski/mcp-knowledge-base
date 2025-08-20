@@ -9,7 +9,7 @@ export async function getFiles({ credentials = null } = {}) {
   
   const { data, error } = await supabaseClient
     .from('documents')
-    .select('id, filename, created_at')
+    .select('id, filename, created_at, file_url, content_type')
     .order('created_at', { ascending: false });
 
   if (error) {
